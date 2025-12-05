@@ -6,10 +6,19 @@ const bcrypt = require("bcryptjs");
 
 const { supabase } = require("./supabaseClient");
 const { generateToken, authMiddleware, requireRole } = require("./auth");
+const transporterRoutes = require("./routes/transporterRoutes");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.use(
+  "/api/transporter",
+  authMiddleware,
+  requireRole("transporter"),
+  transporterRoutes
+);
 
 // ---------- AUTH ROUTES ----------
 
@@ -119,30 +128,35 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 // Get current user
-app.get("/api/auth/me", authMiddleware, async (req, res) => {
-  try {
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, name, email, role")
-      .eq("id", req.user.id)
-      .limit(1);
+app.get(
+  "/api/auth/me",
+  authMiddleware,
+  requireRole("transporter"),
+  async (req, res) => {
+    try {
+      const { data: users, error } = await supabase
+        .from("users")
+        .select("id, name, email, role")
+        .eq("id", req.user.id)
+        .limit(1);
 
-    if (error) {
-      console.error("Supabase select error:", error);
-      return res.status(500).json({ message: "Database error" });
+      if (error) {
+        console.error("Supabase select error:", error);
+        return res.status(500).json({ message: "Database error" });
+      }
+
+      const user = users && users[0];
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({ user });
+    } catch (err) {
+      console.error("Me error:", err);
+      res.status(500).json({ message: "Server error" });
     }
-
-    const user = users && users[0];
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json({ user });
-  } catch (err) {
-    console.error("Me error:", err);
-    res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 // ---------- DASHBOARD ROUTES ----------
 
