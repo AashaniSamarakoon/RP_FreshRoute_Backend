@@ -7,6 +7,9 @@ const bcrypt = require("bcryptjs");
 const { supabase } = require("./supabaseClient");
 const { generateToken, authMiddleware, requireRole } = require("./auth");
 const transporterRoutes = require("./routes/transporterRoutes");
+const fruitGradingRoutes = require("./routes/fruitGradingRoutes");
+const fruitGradingService = require("./services/fruitGradingService");
+const multer = require("multer");
 
 const app = express();
 app.use(cors());
@@ -19,6 +22,9 @@ app.use(
   requireRole("transporter"),
   transporterRoutes
 );
+
+// Fruit Grading Routes (no auth required for now, add if needed)
+app.use("/api/fruit-grading", fruitGradingRoutes);
 
 // ---------- AUTH ROUTES ----------
 
@@ -206,8 +212,44 @@ app.get(
   }
 );
 
+// Error handler for multer errors (must be after all routes)
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        message: "File too large. Maximum size is 10MB per file.",
+      });
+    }
+    if (error.code === "LIMIT_FILE_COUNT") {
+      return res.status(400).json({
+        message: "Too many files. Maximum 5 files allowed.",
+      });
+    }
+    return res.status(400).json({ message: error.message });
+  }
+  if (error) {
+    return res.status(400).json({ message: error.message });
+  }
+  next();
+});
+
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
-app.listen(port, () => {
-  console.log(`FreshRoute backend running on port ${port}`);
-});
+
+// Load ONNX model on startup
+async function startServer() {
+  try {
+    console.log("Loading fruit grading model...");
+    await fruitGradingService.loadModel();
+    console.log("✅ Fruit grading model loaded successfully");
+  } catch (error) {
+    console.error("⚠️  Warning: Failed to load fruit grading model:", error.message);
+    console.error("   Fruit grading endpoints will not be available.");
+  }
+
+  app.listen(port, () => {
+    console.log(`FreshRoute backend running on port ${port}`);
+  });
+}
+
+startServer();
