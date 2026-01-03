@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const { getCollectionJobs } = require("../controllers/transporterController");
+const transporterController = require("../controllers/transporterController");
 
-// Route to fetch collection jobs for the transporter
-router.get("/dashboard", getCollectionJobs);
+// Matches /api/transporter/jobs
+router.get("/jobs", transporterController.getMyJobs);
+router.get("/jobs/:id", transporterController.getJobDetails);
 
 module.exports = router;

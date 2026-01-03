@@ -10,6 +10,8 @@ const transporterRoutes = require("./routes/transporterRoutes");
 const fruitsRoutes = require("./routes/fruitsRoutes");
 const predictStockRoutes = require("./routes/predictStockRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const logisticsRoutes = require("./routes/logisticsRoutes");
+const telemetryRoutes = require("./routes/telemetryRoutes");
 
 const app = express();
 app.use(cors());
@@ -117,9 +119,7 @@ app.post("/api/auth/signup", async (req, res) => {
         console.error("Failed to create buyer entry:", buyerError);
         // Clean up user if buyer creation fails
         await supabase.from("users").delete().eq("id", user.id);
-        return res
-          .status(500)
-          .json({ message: "Failed to create buyer user" });
+        return res.status(500).json({ message: "Failed to create buyer user" });
       }
     } else if (role === "transporter") {
       const { error: transporterError } = await supabase
@@ -269,6 +269,20 @@ app.get(
       deliveriesInTransit: [],
     });
   }
+);
+
+app.use(
+  "/api/logistics",
+  // authMiddleware,
+  // requireRole("transporter"),
+  logisticsRoutes
+);
+
+app.use(
+  "/api/telemetry",
+  // authMiddleware,
+  // requireRole("transporter"),
+  telemetryRoutes
 );
 
 // ---------- START SERVER ----------
