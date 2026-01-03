@@ -152,10 +152,15 @@ async function getForecast7Day(req, res) {
 async function getLiveMarketPrices(req, res) {
   try {
     const { location = "" } = req.query;
+    const today = todayISO();
+    const tomorrow = new Date(new Date(today).getTime() + 86400000).toISOString().split("T")[0];
 
+    // 1) Try to fetch today's prices using timestamp range
     let query = supabase
       .from("economic_center_prices")
       .select("fruit_id, fruit_name, variety, price_per_unit, unit, captured_at, economic_center")
+      .gte("captured_at", `${today}T00:00:00Z`)
+      .lt("captured_at", `${tomorrow}T00:00:00Z`)
       .order("captured_at", { ascending: false })
       .limit(50);
 
@@ -163,9 +168,22 @@ async function getLiveMarketPrices(req, res) {
       query = query.ilike("economic_center", `%${location}%`);
     }
 
-    const { data, error } = await query;
-
+    let { data, error } = await query;
     if (error) throw error;
+
+    // 2) If no rows for today, fall back to latest available
+    let usedFallback = false;
+    if (!data || data.length === 0) {
+      usedFallback = true;
+      query = supabase
+        .from("economic_center_prices")
+        .select("fruit_id, fruit_name, variety, price_per_unit, unit, captured_at, economic_center")
+        .order("captured_at", { ascending: false })
+        .limit(50);
+      const fallback = await query;
+      if (fallback.error) throw fallback.error;
+      data = fallback.data;
+    }
 
     // Get fruit images
     const { data: fruitImages } = await supabase
@@ -187,12 +205,60 @@ async function getLiveMarketPrices(req, res) {
 
     res.json({
       location: location || data?.[0]?.economic_center || "",
+      date: usedFallback ? undefined : today,
       lastUpdated: data?.[0]?.captured_at || new Date().toISOString(),
       fruits,
     });
   } catch (err) {
     console.error("Live market error", err);
     res.status(500).json({ message: "Failed to fetch market prices" });
+  }
+}
+
+// ============ HISTORICAL PRICES ============
+async function getHistoricalPrices(req, res) {
+  try {
+    const { days = 30, location = "", fruit = "" } = req.query;
+    const daysBack = Math.min(Math.max(parseInt(days) || 30, 1), 365); // 1-365 days
+    const startDate = new Date(Date.now() - daysBack * 86400000).toISOString().split("T")[0];
+
+    let query = supabase
+      .from("historical_market_prices")
+      .select("fruit_id, fruit_name, variety, price_per_unit, unit, captured_at, economic_center")
+      .gte("captured_at", `${startDate}T00:00:00Z`)
+      .order("captured_at", { ascending: false })
+      .limit(200);
+
+    if (location) {
+      query = query.ilike("economic_center", `%${location}%`);
+    }
+
+    if (fruit) {
+      query = query.ilike("fruit_name", `%${fruit}%`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Group by date and fruit for trend analysis
+    const grouped = {};
+    (data || []).forEach(p => {
+      const date = p.captured_at.split("T")[0];
+      const key = `${p.fruit_name}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push({ date, price: p.price_per_unit, unit: p.unit });
+    });
+
+    res.json({
+      location: location || "All",
+      fruit: fruit || "All",
+      daysBack,
+      totalRecords: data?.length || 0,
+      trends: grouped,
+    });
+  } catch (err) {
+    console.error("Historical prices error", err);
+    res.status(500).json({ message: "Failed to fetch historical prices" });
   }
 }
 
@@ -561,4 +627,5 @@ module.exports = {
   markNotificationRead,
   getFeedback,
   createFeedback,
+  getHistoricalPrices,
 };

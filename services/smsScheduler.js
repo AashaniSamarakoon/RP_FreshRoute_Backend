@@ -22,7 +22,7 @@ async function sendMorningForecastSMS() {
   const hours = String(now.getHours()).padStart(2, "0");
   const mins = String(now.getMinutes()).padStart(2, "0");
 
-  console.log(`\n📅 [${hours}:${mins}] Running daily SMS forecast job...`);
+  console.log(`\n📅 [${hours}:${mins}] Running daily SMS forecast alert job...`);
 
   try {
     let forecasts = [];
@@ -30,53 +30,55 @@ async function sendMorningForecastSMS() {
 
     try {
       [forecasts, farmers] = await Promise.all([
-        getFreshForecastsForSMS(24), // Last 24 hours
+        getFreshForecastsForSMS(),
         getSMSSubscribedFarmers(),
       ]);
     } catch (dbErr) {
-      console.warn("⚠️ Database query error (may need schema):", dbErr.message);
-      console.log("💡 Please ensure sms_logs, forecast_daily, and users tables exist in Supabase");
+      console.error("⚠️ Database query error:", dbErr.message);
       return;
     }
 
     if (!forecasts || !forecasts.length) {
-      console.log("⚠️ No recent forecasts found. Skipping SMS send.");
+      console.log("⚠️ No forecasts for today. Skipping SMS send.");
       return;
     }
 
     if (!farmers || !farmers.length) {
-      console.log("⚠️ No farmers with SMS enabled found. Skipping SMS send.");
+      console.log("⚠️ No farmers with SMS alerts enabled. Skipping SMS send.");
       return;
     }
 
-    console.log(`✓ Found ${forecasts.length} fresh forecasts, ${farmers.length} farmers`);
+    console.log(`✓ Found ${forecasts.length} forecasts for ${farmers.length} farmers`);
 
     const smsBatch = compileSMSBatch(forecasts, farmers);
-    console.log(`📱 Sending ${smsBatch.length} SMS messages...`);
+    console.log(`📱 Preparing to send ${smsBatch.length} SMS messages...`);
 
     const sendResults = await sendBatchSMS(smsBatch.map((s) => ({ phone: s.phone, message: s.message })));
 
     // Log results
+    let successCount = 0;
+    let failCount = 0;
     for (let i = 0; i < smsBatch.length; i++) {
       const batch = smsBatch[i];
       const result = sendResults[i];
 
       await logSMSSend(
         batch.farmer_id,
-        batch.forecast_ids,
         batch.phone,
         result.status === "fulfilled" ? "sent" : "failed",
         result.status === "rejected" ? result.result : null
       );
 
       if (result.status === "fulfilled") {
-        console.log(`✓ SMS sent to farmer ${batch.farmer_id}`);
+        console.log(`✓ SMS sent to farmer ${batch.farmer_id}: ${batch.phone}`);
+        successCount++;
       } else {
         console.error(`✗ SMS failed for farmer ${batch.farmer_id}: ${result.result}`);
+        failCount++;
       }
     }
 
-    console.log("✓ Morning SMS job completed.\n");
+    console.log(`✓ SMS alert job completed. ${successCount} sent, ${failCount} failed.\n`);
   } catch (err) {
     console.error("❌ Morning SMS job error:", err.message);
   }

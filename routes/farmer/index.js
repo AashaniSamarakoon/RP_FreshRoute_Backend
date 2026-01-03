@@ -13,6 +13,7 @@ const {
   markNotificationRead,
   getFeedback,
   createFeedback,
+  getHistoricalPrices,
 } = require("../../controllers/farmer/farmerController");
 const { getSMSPreferences, updateSMSPreferences } = require("../../controllers/farmer/smsController");
 
@@ -31,6 +32,8 @@ router.get("/forecast/fruit", getFruitForecast);
 router.get("/live-market", getLiveMarketPrices);
 router.get("/prices/daily", getDailyPrices);
 router.get("/prices/daily-v2", getDailyPricesV2);
+router.get("/prices/history", getHistoricalPrices);
+
 
 // Accuracy
 router.get("/accuracy", getAccuracyInsights);

@@ -7,9 +7,14 @@ const bcrypt = require("bcryptjs");
 const { supabase } = require("./supabaseClient");
 const { generateToken, authMiddleware, requireRole } = require("./auth");
 const transporterRoutes = require("./routes/transporterRoutes");
+const farmerRoutes = require("./routes/farmer");
+const adminRoutes = require("./routes/admin");
 const fruitsRoutes = require("./routes/fruitsRoutes");
 const predictStockRoutes = require("./routes/predictStockRoutes");
+
 const orderRoutes = require("./routes/orderRoutes");
+const { startSMSScheduler } = require("./services/smsScheduler");
+const { startDambullaScheduler } = require("./services/dambullaScheduler");
 
 const app = express();
 app.use(cors());
@@ -23,6 +28,8 @@ app.use(
   transporterRoutes
 );
 
+app.use("/api/farmer", authMiddleware, requireRole("farmer"), farmerRoutes);
+app.use("/api/admin", authMiddleware, requireRole("admin"), adminRoutes);
 // Fruit properties (GET id, fruit_name, variant)
 app.use("/api/fruit-properties", authMiddleware, fruitsRoutes);
 
@@ -273,6 +280,15 @@ app.get(
 
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
+// Bind to 0.0.0.0 to listen on all network interfaces (required for mobile access)
 app.listen(port, "0.0.0.0", () => {
-  console.log(`FreshRoute backend running on port ${port}`);
+  console.log(`FreshRoute backend running on 0.0.0.0:${port}`);
+  console.log(`Available at: http://192.168.43.45:${port}`);
+  
+  // Start SMS scheduler
+  startSMSScheduler();
+  
+  // Start Dambulla price scraper
+  startDambullaScheduler({ runOnStart: true });
+  console.log("✓ All schedulers started");
 });

@@ -1,9 +1,52 @@
 // services/dambullaScraper.js
-const fetch = require("node-fetch");
+const fetch = require("node-fetch").default || require("node-fetch");
 const { supabase } = require("../supabaseClient");
 
 const DAMBULLA_URL = "https://dambulladec.com/home-dailyprice";
 const ECONOMIC_CENTER = "Dambulla Dedicated Economic Centre";
+
+// Use a deterministic captured_at timestamp for "today" to avoid duplicate inserts per day
+function todayCapturedAtISO() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  // 06:00 local expressed in UTC to keep it roughly morning for reporting
+  return new Date(`${y}-${m}-${d}T06:00:00.000Z`).toISOString();
+}
+
+async function getLatestPricesFallback(capturedAt) {
+  // Pull most recent price per fruit for this economic center and clone as today's entry
+  const { data, error } = await supabase
+    .from("economic_center_prices")
+    .select("fruit_id, fruit_name, variety, price_per_unit, unit, currency")
+    .eq("economic_center", ECONOMIC_CENTER)
+    .order("captured_at", { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+
+  const latestByFruit = new Map();
+  for (const row of data || []) {
+    if (!latestByFruit.has(row.fruit_name)) {
+      latestByFruit.set(row.fruit_name, row);
+    }
+  }
+
+  const rows = Array.from(latestByFruit.values()).map(r => ({
+    economic_center: ECONOMIC_CENTER,
+    fruit_id: r.fruit_id,
+    fruit_name: r.fruit_name,
+    variety: r.variety,
+    price_per_unit: r.price_per_unit,
+    unit: r.unit,
+    currency: r.currency || "LKR",
+    source_url: `${DAMBULLA_URL} (fallback)`,
+    captured_at: capturedAt,
+  }));
+
+  return rows;
+}
 
 // Map fruit names from website to our DB
 const FRUIT_MAPPING = {
@@ -101,6 +144,8 @@ async function scrapeDambulla() {
 async function importDambullaPrices() {
   const jobId = require("crypto").randomUUID();
   const startTime = new Date();
+  const capturedAt = todayCapturedAtISO();
+  let usedFallback = false;
 
   try {
     console.log(`[Dambulla Import Job ${jobId}] Starting`);
@@ -114,11 +159,20 @@ async function importDambullaPrices() {
     });
 
     // Scrape data
-    const rows = await scrapeDambulla();
+    let rows = await scrapeDambulla();
 
-    if (rows.length === 0) {
-      throw new Error("No data scraped from Dambulla");
+    if (!rows || rows.length === 0) {
+      console.warn("[Dambulla Import] No scraped rows. Using latest available prices as fallback.");
+      rows = await getLatestPricesFallback(capturedAt);
+      usedFallback = true;
     }
+
+    if (!rows || rows.length === 0) {
+      throw new Error("No Dambulla prices available (scrape + fallback empty)");
+    }
+
+    // Normalize captured_at to today's deterministic timestamp
+    rows = rows.map(r => ({ ...r, captured_at: capturedAt }));
 
     // Get fruit IDs from DB
     const { data: fruits, error: fruitErr } = await supabase
@@ -135,14 +189,21 @@ async function importDambullaPrices() {
       fruit_id: fruitMap[row.fruit_name] || null,
     }));
 
-    // Upsert into DB
-    const { error: upsertErr } = await supabase
+    // Remove any existing rows for today to avoid duplicates, then insert fresh set
+    const todayDate = capturedAt.slice(0, 10);
+    const { error: deleteErr } = await supabase
       .from("economic_center_prices")
-      .upsert(enrichedRows, {
-        onConflict: "economic_center, fruit_id, captured_at",
-      });
+      .delete()
+      .eq("economic_center", ECONOMIC_CENTER)
+      .eq("captured_at::date", todayDate);
 
-    if (upsertErr) throw upsertErr;
+    if (deleteErr) throw deleteErr;
+
+    const { error: insertErr } = await supabase
+      .from("economic_center_prices")
+      .insert(enrichedRows);
+
+    if (insertErr) throw insertErr;
 
     // Log success
     const completedAt = new Date();
@@ -155,6 +216,10 @@ async function importDambullaPrices() {
       })
       .eq("id", jobId);
 
+    if (usedFallback) {
+      console.warn(`[Dambulla Import Job ${jobId}] Fallback used - cloned latest prices as today's data.`);
+    }
+
     console.log(
       `[Dambulla Import Job ${jobId}] Success: ${rows.length} records imported in ${
         (completedAt - startTime) / 1000
@@ -166,15 +231,18 @@ async function importDambullaPrices() {
     console.error(`[Dambulla Import Job ${jobId}] Error: ${err.message}`);
 
     // Log failure
-    await supabase
-      .from("scraping_jobs")
-      .update({
-        status: "failed",
-        error_message: err.message,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", jobId)
-      .catch(e => console.error("Failed to log error:", e));
+    try {
+      await supabase
+        .from("scraping_jobs")
+        .update({
+          status: "failed",
+          error_message: err.message,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", jobId);
+    } catch (logErr) {
+      console.error("Failed to log error:", logErr.message);
+    }
 
     throw err;
   }

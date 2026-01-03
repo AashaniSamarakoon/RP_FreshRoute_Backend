@@ -3,70 +3,59 @@ const { supabase } = require("../supabaseClient");
 
 /**
  * Build SMS message from forecast data
- * @param {object} forecast - Single forecast row with fruit and market relations
- * @param {object} options - {showPrice: bool, showDemand: bool}
+ * @param {object} forecast - Single forecast row {fruit, target, date, forecast_value}
+ * @param {object} options - {showTrend: bool}
  * @returns {string} Formatted SMS text
  */
 function buildForecastSMS(forecast, options = {}) {
-  const { showPrice = true, showDemand = true } = options;
-  const fruit = forecast.fruits?.name || "Produce";
-  const market = forecast.markets?.name || "Market";
-  const date = forecast.target_date || "Tomorrow";
+  const { showTrend = true } = options;
+  const fruit = forecast.fruit || "Produce";
+  const target = forecast.target || "unknown";
+  const date = forecast.date || "Tomorrow";
+  const value = forecast.forecast_value || 0;
 
-  let message = `🌱 FreshRoute Alert - ${fruit}\n`;
-  message += `Market: ${market} | Date: ${date}\n`;
+  let message = `🌱 FreshRoute Alert\n`;
+  message += `Fruit: ${fruit}\n`;
+  message += `Date: ${date}\n`;
 
-  if (showDemand) {
-    const demandEmoji = forecast.demand_trend === "Rising Demand" ? "📈" : forecast.demand_trend === "Declining Demand" ? "📉" : "➡️";
-    message += `${demandEmoji} Demand: ${forecast.demand_trend || "Stable"} (${forecast.predicted_demand || "N/A"} units)\n`;
+  if (target === "demand") {
+    const demandEmoji = value > 1000 ? "📈" : value < 500 ? "📉" : "➡️";
+    message += `${demandEmoji} Predicted Demand: ${Math.round(value)} units\n`;
+  } else if (target === "price") {
+    const priceEmoji = value > 200 ? "⬆️" : value < 100 ? "⬇️" : "◾";
+    message += `${priceEmoji} Expected Price: Rs. ${value.toFixed(2)}/kg\n`;
   }
 
-  if (showPrice) {
-    const priceEmoji = forecast.price_trend === "Price Increase" ? "⬆️" : forecast.price_trend === "Price Decrease" ? "⬇️" : "◾";
-    message += `${priceEmoji} Expected Price: Rs. ${forecast.predicted_price?.toFixed(2) || "N/A"}/kg\n`;
-  }
-
-  message += `Confidence: ${((forecast.confidence || 0) * 100).toFixed(0)}%`;
+  message += `\nStay updated with FreshRoute!`;
 
   return message;
 }
 
 /**
- * Get fresh forecasts (generated today) for SMS batch send
- * @param {number} hoursOld - Only include forecasts generated in last N hours (default 12)
- * @returns {Promise<Array>} Forecasts with fruit and market data
+ * Get today's forecasts for SMS alert
+ * @returns {Promise<Array>} Forecasts for today {fruit, target, date, forecast_value}
  */
-async function getFreshForecastsForSMS(hoursOld = 12) {
+async function getFreshForecastsForSMS() {
   try {
-    const cutoffTime = new Date(Date.now() - hoursOld * 3600000).toISOString();
+    const today = new Date().toISOString().slice(0, 10);
 
     const { data, error } = await supabase
-      .from("forecast_daily")
-      .select(
-        `
-        id,
-        fruit_id,
-        market_id,
-        target_date,
-        predicted_price,
-        predicted_demand,
-        demand_trend,
-        price_trend,
-        confidence,
-        generated_at,
-        fruits(name, variety),
-        markets(name, district)
-      `
-      )
-      .gte("generated_at", cutoffTime)
-      .order("generated_at", { ascending: false });
+      .from("forecasts")
+      .select("fruit, target, date, forecast_value")
+      .eq("date", today)
+      .order("fruit", { ascending: true });
 
     if (error) {
-      console.warn("⚠️ Failed to fetch forecasts:", error.message);
+      console.warn("⚠️ Failed to fetch today's forecasts:", error.message);
       return [];
     }
 
-    return data || [];
+    if (!data || data.length === 0) {
+      console.log("ℹ️ No forecasts for today");
+      return [];
+    }
+
+    return data;
   } catch (err) {
     console.warn("⚠️ Error fetching forecasts:", err.message);
     return [];
@@ -74,27 +63,21 @@ async function getFreshForecastsForSMS(hoursOld = 12) {
 }
 
 /**
- * Get farmers subscribed to SMS alerts with their phone numbers
- * @returns {Promise<Array>} Farmers {id, name, email, phone, preferred_market_id}
+ * Get farmers with SMS alerts enabled
+ * @returns {Promise<Array>} Farmers {id, name, phone, role, sms_alerts_enabled, sms_frequency}
  */
 async function getSMSSubscribedFarmers() {
   try {
-    // Try to get farmers with SMS enabled (requires schema migration)
     const { data, error } = await supabase
       .from("users")
-      .select("id, name, email, phone")
+      .select("id, name, phone, role, sms_alerts_enabled, sms_frequency")
       .eq("role", "farmer")
       .eq("sms_alerts_enabled", true)
       .not("phone", "is", null);
 
     if (error) {
-      // If column doesn't exist, return empty array with helpful message
-      if (error.message.includes("sms_alerts_enabled") || error.code === "PGRST116") {
-        console.warn("⚠️ sms_alerts_enabled column not found - please run schema migration");
-        return [];
-      }
       console.error("Failed to fetch farmers:", error.message);
-      throw error;
+      return [];
     }
 
     return data || [];
@@ -105,28 +88,53 @@ async function getSMSSubscribedFarmers() {
 }
 
 /**
- * Compile SMS batch: map forecasts to farmers + create message text
- * @param {Array} forecasts - Raw forecast rows
- * @param {Array} farmers - Raw farmer rows
- * @returns {Array} {phone, message} objects
+ * Compile SMS batch: group forecasts by fruit and send to each farmer
+ * @param {Array} forecasts - Raw forecast rows {fruit, target, date, forecast_value}
+ * @param {Array} farmers - Raw farmer rows {id, name, phone}
+ * @returns {Array} {farmer_id, phone, message} objects
  */
 function compileSMSBatch(forecasts, farmers) {
   if (!forecasts.length || !farmers.length) {
+    console.log("ℹ️ No forecasts or farmers to process");
     return [];
   }
 
   const batch = [];
-  const topForecasts = forecasts.slice(0, 3); // Send top 3 forecasts per farmer
 
-  farmers.forEach((farmer) => {
-    const messages = topForecasts.map((f) => buildForecastSMS(f));
-    const combinedMsg = messages.join("\n---\n");
+  // Group forecasts by fruit
+  const forecastsByFruit = {};
+  forecasts.forEach(f => {
+    if (!forecastsByFruit[f.fruit]) {
+      forecastsByFruit[f.fruit] = { demand: null, price: null };
+    }
+    if (f.target === "demand") forecastsByFruit[f.fruit].demand = f.forecast_value;
+    if (f.target === "price") forecastsByFruit[f.fruit].price = f.forecast_value;
+  });
+
+  // Create one message per farmer with all fruit forecasts
+  farmers.forEach(farmer => {
+    let combinedMsg = `📱 FreshRoute Daily Forecast Alert\n`;
+    combinedMsg += `Hello ${farmer.name}!\n\n`;
+
+    Object.entries(forecastsByFruit).forEach(([fruit, values], idx) => {
+      if (idx > 0) combinedMsg += "\n---\n";
+      
+      combinedMsg += `🥭 ${fruit}\n`;
+      if (values.demand !== null) {
+        combinedMsg += `📈 Demand: ${Math.round(values.demand)} units\n`;
+      }
+      if (values.price !== null) {
+        combinedMsg += `💰 Price: Rs. ${values.price.toFixed(2)}/kg\n`;
+      }
+    });
+
+    combinedMsg += `\n\nCheck FreshRoute app for detailed analysis!`;
 
     batch.push({
       farmer_id: farmer.id,
       phone: farmer.phone,
       message: combinedMsg,
-      forecast_ids: topForecasts.map((f) => f.id),
+      forecast_count: forecasts.length,
     });
   });
 
@@ -134,27 +142,27 @@ function compileSMSBatch(forecasts, farmers) {
 }
 
 /**
- * Log SMS send attempt in DB for audit trail
- * @param {string} farmer_id
- * @param {Array} forecast_ids
- * @param {string} phone
- * @param {string} status - 'pending', 'sent', 'failed'
- * @param {string} error_msg - Optional error message
+ * Log SMS send attempt to sms_logs table
  */
-async function logSMSSend(farmer_id, forecast_ids, phone, status, error_msg = null) {
+async function logSMSSend(farmer_id, phone, status, error_msg = null) {
   try {
-    const { error } = await supabase.from("sms_logs").insert({
-      farmer_id,
-      forecast_ids,
-      phone,
-      status,
-      error_message: error_msg,
-      sent_at: new Date().toISOString(),
-    });
+    const { error } = await supabase
+      .from("sms_logs")
+      .insert({
+        farmer_id,
+        phone,
+        status,
+        error_message: error_msg,
+        sent_at: new Date().toISOString(),
+        forecast_ids: [], // Empty array for now
+      });
 
     if (error) {
-      console.warn("⚠️ Failed to log SMS (table may not exist):", error.message);
+      console.warn("⚠️ Failed to log SMS to database:", error.message);
+      return;
     }
+
+    console.log(`📝 SMS log created for farmer ${farmer_id}: ${phone}`);
   } catch (err) {
     console.warn("⚠️ SMS logging error:", err.message);
   }
