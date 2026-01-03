@@ -1,9 +1,9 @@
-const { supabase } = require("../supabaseClient");
+const { supabase } = require("../utils/supabaseClient");
 
 // Configurable Weights
-const W_REP = 0.5;   // Reputation Weight
+const W_REP = 0.5; // Reputation Weight
 const W_PRICE = 0.3; // Price Weight
-const W_LOC = 0.2;   // Location Weight
+const W_LOC = 0.2; // Location Weight
 
 // Helper: Haversine Distance (in km)
 const getDistanceKm = (lat1, lon1, lat2, lon2) => {
@@ -38,7 +38,8 @@ const runMatchingAlgorithm = async (orderId) => {
     // Note: Assuming 'price_per_kg' exists in estimated_stock and 'reputation', 'latitude', 'longitude' in farmer.
     const { data: pool, error: poolError } = await supabase
       .from("estimated_stock")
-      .select(`
+      .select(
+        `
         id,
         quantity,
         grade,
@@ -49,7 +50,8 @@ const runMatchingAlgorithm = async (orderId) => {
           latitude,
           longitude
         )
-      `)
+      `
+      )
       .eq("fruit_type", order.fruit_type)
       .eq("variant", order.variant)
       .eq("grade", order.grade) // Hard constraint on grade
@@ -62,7 +64,7 @@ const runMatchingAlgorithm = async (orderId) => {
     }
 
     // --- Step 3: Multi-Factor Scoring ---
-    
+
     // 3a. Prepare Data & Calculate Max Price for Normalization
     let maxPrice = 0;
     const candidates = pool.map((item) => {
@@ -91,22 +93,21 @@ const runMatchingAlgorithm = async (orderId) => {
         }
       });
       // Normalize location score (0 to 1)
-      c1.locationScore = candidates.length > 1 ? neighbors / (candidates.length - 1) : 0;
+      c1.locationScore =
+        candidates.length > 1 ? neighbors / (candidates.length - 1) : 0;
     });
 
     // 3c. Calculate Final Match Score
     candidates.forEach((c) => {
       // Normalize Price: Lower is better. 1 - (price / max). Avoid div by zero.
       const priceScore = maxPrice > 0 ? 1 - c.price / maxPrice : 1;
-      
-      // Normalize Reputation: Assuming DB stores 0-5, normalize to 0-1. 
+
+      // Normalize Reputation: Assuming DB stores 0-5, normalize to 0-1.
       // If already 0-1, use as is. Let's assume 0-5 scale.
-      const repScore = c.reputation / 5; 
+      const repScore = c.reputation / 5;
 
       c.finalScore =
-        W_REP * repScore +
-        W_PRICE * priceScore +
-        W_LOC * c.locationScore;
+        W_REP * repScore + W_PRICE * priceScore + W_LOC * c.locationScore;
     });
 
     // Sort by Score Descending
@@ -120,13 +121,13 @@ const runMatchingAlgorithm = async (orderId) => {
       if (remainingQty <= 0) break;
 
       const takeQty = Math.min(remainingQty, candidate.available_qty);
-      
+
       fulfillmentPlan.push({
         order_id: order.id,
         stock_id: candidate.stock_id,
         farmer_id: candidate.farmer_id,
         quantity_allocated: takeQty,
-        match_score: candidate.finalScore
+        match_score: candidate.finalScore,
       });
 
       remainingQty -= takeQty;
@@ -139,12 +140,15 @@ const runMatchingAlgorithm = async (orderId) => {
         .from("order_assignments")
         .insert(fulfillmentPlan);
 
-      if (insertError) console.error("[Matching] Failed to save assignments:", insertError);
-      else console.log(`[Matching] Successfully assigned ${fulfillmentPlan.length} farmers to Order ${orderId}`);
+      if (insertError)
+        console.error("[Matching] Failed to save assignments:", insertError);
+      else
+        console.log(
+          `[Matching] Successfully assigned ${fulfillmentPlan.length} farmers to Order ${orderId}`
+        );
     }
 
     return fulfillmentPlan;
-
   } catch (err) {
     console.error("[Matching] Algorithm failed:", err);
     return [];

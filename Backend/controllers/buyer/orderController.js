@@ -1,4 +1,4 @@
-const { supabase } = require("../../supabaseClient");
+const { supabase } = require("../../utils/supabaseClient");
 const { runMatchingAlgorithm } = require("../../Services/matchingService");
 
 const placeOrder = async (req, res) => {

@@ -1,4 +1,4 @@
-const { supabase } = require("../../supabaseClient");
+const { supabase } = require("../../utils/supabaseClient");
 
 const submitPredictStock = async (req, res) => {
   try {
@@ -40,12 +40,10 @@ const submitPredictStock = async (req, res) => {
 
     if (farmerError) {
       console.error("Error fetching farmer:", farmerError);
-      return res
-        .status(500)
-        .json({
-          message: "Failed to find associated farmer.",
-          error: farmerError.message,
-        });
+      return res.status(500).json({
+        message: "Failed to find associated farmer.",
+        error: farmerError.message,
+      });
     }
     if (!farmerData) {
       return res

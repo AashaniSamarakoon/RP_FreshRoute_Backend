@@ -1,4 +1,4 @@
-const { supabase } = require("../../supabaseClient");
+const { supabase } = require("../../utils/supabaseClient");
 
 const getCollectionJobs = async (req, res) => {
   try {

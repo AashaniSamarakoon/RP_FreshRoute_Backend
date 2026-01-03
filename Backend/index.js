@@ -2,14 +2,16 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const bcrypt = require("bcryptjs");
 
-const { supabase } = require("./supabaseClient");
-const { generateToken, authMiddleware, requireRole } = require("./auth");
+const { authMiddleware, requireRole } = require("./Services/auth");
+const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
 const fruitsRoutes = require("./routes/shared/fruitsRoutes");
 const predictStockRoutes = require("./routes/farmer/predictStockRoutes");
 const orderRoutes = require("./routes/buyer/orderRoutes");
+const farmerDashboardRoutes = require("./routes/farmer/dashboardRoutes");
+const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes");
+const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 
 const app = express();
 app.use(cors());
@@ -42,234 +44,13 @@ app.use(
   orderRoutes
 );
 
-// ---------- AUTH ROUTES ----------
+// Auth routes
+app.use("/api/auth", authRoutes);
 
-// Signup
-app.post("/api/auth/signup", async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
-
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ message: "Missing fields" });
-    }
-
-    const allowedRoles = ["farmer", "transporter", "buyer"];
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: "Invalid role" });
-    }
-
-    // 1. Check if email exists
-    const { data: existingUsers, error: existingError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email);
-
-    if (existingError) {
-      console.error("Supabase select error:", existingError);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    if (existingUsers && existingUsers.length > 0) {
-      return res.status(409).json({ message: "Email already registered" });
-    }
-
-    // 2. Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    // 3. Insert user
-    const { data: insertedUsers, error: insertError } = await supabase
-      .from("users")
-      .insert({
-        name,
-        email,
-        password_hash: passwordHash,
-        role,
-      })
-      .select("id, name, email, role");
-
-    if (insertError) {
-      console.error("Supabase insert error:", insertError);
-      return res.status(500).json({ message: "Failed to create user" });
-    }
-
-    const user = insertedUsers[0];
-
-    // 4. Create role-specific entry
-    if (role === "farmer") {
-      const { error: farmerError } = await supabase
-        .from("farmer")
-        .insert({ user_id: user.id });
-
-      if (farmerError) {
-        console.error("Failed to create farmer entry:", farmerError);
-        // Clean up user if farmer creation fails
-        await supabase.from("users").delete().eq("id", user.id);
-        return res
-          .status(500)
-          .json({ message: "Failed to create farmer user" });
-      }
-    } else if (role === "buyer") {
-      const { error: buyerError } = await supabase
-        .from("buyers")
-        .insert({ user_id: user.id });
-
-      if (buyerError) {
-        console.error("Failed to create buyer entry:", buyerError);
-        // Clean up user if buyer creation fails
-        await supabase.from("users").delete().eq("id", user.id);
-        return res
-          .status(500)
-          .json({ message: "Failed to create buyer user" });
-      }
-    } else if (role === "transporter") {
-      const { error: transporterError } = await supabase
-        .from("transporter")
-        .insert({ user_id: user.id });
-
-      if (transporterError) {
-        console.error("Failed to create transporter entry:", transporterError);
-        // Clean up user if transporter creation fails
-        await supabase.from("users").delete().eq("id", user.id);
-        return res
-          .status(500)
-          .json({ message: "Failed to create transporter user" });
-      }
-    }
-
-    const token = generateToken(user);
-
-    res.status(201).json({ token, user });
-  } catch (err) {
-    console.error("Signup error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// Login
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ message: "Missing email or password" });
-    }
-
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, name, email, role, password_hash")
-      .eq("email", email)
-      .limit(1);
-
-    if (error) {
-      console.error("Supabase select error:", error);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    const user = users && users[0];
-    if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const token = generateToken(user);
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
-  } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// Get current user
-app.get(
-  "/api/auth/me",
-  authMiddleware,
-  requireRole("transporter"),
-  async (req, res) => {
-    try {
-      const { data: users, error } = await supabase
-        .from("users")
-        .select("id, name, email, role")
-        .eq("id", req.user.id)
-        .limit(1);
-
-      if (error) {
-        console.error("Supabase select error:", error);
-        return res.status(500).json({ message: "Database error" });
-      }
-
-      const user = users && users[0];
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      res.json({ user });
-    } catch (err) {
-      console.error("Me error:", err);
-      res.status(500).json({ message: "Server error" });
-    }
-  }
-);
-
-// ---------- DASHBOARD ROUTES ----------
-
-// Farmer dashboard
-app.get(
-  "/api/farmer/dashboard",
-  authMiddleware,
-  requireRole("farmer"),
-  async (req, res) => {
-    // TODO: replace with real farmer data later
-    res.json({
-      message: `Welcome, farmer ${req.user.name}`,
-      upcomingPickups: [],
-      stats: {
-        totalShipments: 0,
-        spoilageReduced: 0,
-      },
-    });
-  }
-);
-
-// Transporter dashboard
-app.get(
-  "/api/transporter/dashboard",
-  authMiddleware,
-  requireRole("transporter"),
-  async (req, res) => {
-    res.json({
-      message: `Welcome, transporter ${req.user.name}`,
-      todayJobs: [],
-      vehicleStatus: [],
-    });
-  }
-);
-
-// Buyer dashboard
-app.get(
-  "/api/buyer/dashboard",
-  authMiddleware,
-  requireRole("buyer"),
-  async (req, res) => {
-    res.json({
-      message: `Welcome, buyer ${req.user.name}`,
-      openOrders: [],
-      deliveriesInTransit: [],
-    });
-  }
-);
+// Dashboard routes
+app.use("/api/farmer/dashboard", farmerDashboardRoutes);
+app.use("/api/transporter/dashboard", transporterDashboardRoutes);
+app.use("/api/buyer/dashboard", buyerDashboardRoutes);
 
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
