@@ -2,8 +2,13 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const cron = require("node-cron");
 
 const { authMiddleware, requireRole } = require("./Services/auth");
+const {
+  runBatchMatching,
+  markExpiredOrders,
+} = require("./Services/matchingService");
 const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
 const fruitsRoutes = require("./routes/shared/fruitsRoutes");
@@ -12,6 +17,7 @@ const orderRoutes = require("./routes/buyer/orderRoutes");
 const farmerDashboardRoutes = require("./routes/farmer/dashboardRoutes");
 const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes");
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
+const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 
 const app = express();
 app.use(cors());
@@ -36,6 +42,9 @@ app.use(
   predictStockRoutes
 );
 
+// Farmer proposals (view/accept/reject buyer requests)
+app.use("/api/farmer/proposals", farmerProposalRoutes);
+
 // Buyer place order
 app.use(
   "/api/buyer/place-order",
@@ -57,3 +66,20 @@ const port = process.env.PORT || 4000;
 app.listen(port, "0.0.0.0", () => {
   console.log(`FreshRoute backend running on port ${port}`);
 });
+
+// ---------- SCHEDULED JOBS ----------
+// Run batch matching every 2 hours (at minute 0)
+cron.schedule("0 */2 * * *", async () => {
+  console.log("[Cron] Running scheduled batch matching...");
+  await runBatchMatching();
+});
+
+// Mark expired orders daily at midnight
+cron.schedule("0 0 * * *", async () => {
+  console.log("[Cron] Checking for expired orders...");
+  await markExpiredOrders();
+});
+
+console.log(
+  "[Cron] Scheduled jobs initialized: Batch matching (every 2h), Expiry check (daily)"
+);

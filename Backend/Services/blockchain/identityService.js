@@ -4,9 +4,9 @@ const path = require('path');
 
 // Mapping your specific supply chain roles to the correct Network Organizations
 const connectionConfig = {
-    farmer:      { url: 'https://localhost:7054',  name: 'ca.org1.example.com',  mspId: 'Org1MSP' }, // Supplier
-    buyer:       { url: 'https://localhost:8054',  name: 'ca.org2.example.com',  mspId: 'Org2MSP' }, // Consumer
-    driver:      { url: 'https://localhost:11054', name: 'ca.org3.example.com', mspId: 'Org3MSP' }  // Logistics
+    farmer:      { url: 'https://localhost:7054',  name: 'ca-org1',  mspId: 'Org1MSP' }, // Supplier
+    buyer:       { url: 'https://localhost:8054',  name: 'ca-org2',  mspId: 'Org2MSP' }, // Consumer
+    driver:      { url: 'https://localhost:11054', name: 'ca-org3', mspId: 'Org3MSP' }  // Logistics
 };
 
 async function registerAndEnrollUser(userId, role) {

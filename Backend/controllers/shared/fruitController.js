@@ -3,7 +3,7 @@ const { supabase } = require("../../utils/supabaseClient");
 const getFruits = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from("fruit_properties_u")
+      .from("fruit_properties_1")
       .select("id, fruit_name, variant")
       .order("fruit_name", { ascending: true });
 

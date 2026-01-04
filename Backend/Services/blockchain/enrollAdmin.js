@@ -1,59 +1,60 @@
 const FabricCAServices = require('fabric-ca-client');
 const { Wallets } = require('fabric-network');
+const fs = require('fs');
 const path = require('path');
 
-// Connection details for your 3 specific CAs
-const connectionConfig = {
-    farmer:    { url: 'https://localhost:7054', name: 'ca.org1.example.com', mspId: 'Org1MSP' },
-    buyer:     { url: 'https://localhost:8054', name: 'ca.org2.example.com', mspId: 'Org2MSP' },
-    logistics: { url: 'https://localhost:11054', name: 'ca.org3.example.com', mspId: 'Org3MSP' }
-};
+const orgs = [
+    { url: 'https://localhost:7054',  name: 'ca-org1', mspId: 'Org1MSP' }, // Supplier
+    { url: 'https://localhost:8054',  name: 'ca-org2', mspId: 'Org2MSP' }, // Consumer
+    { url: 'https://localhost:11054', name: 'ca-org3', mspId: 'Org3MSP' }  // Logistics
+];
 
-async function registerAndEnrollUser(userId, role) {
+async function main() {
     try {
-        // 1. Select the correct CA based on the business role
-        const config = connectionConfig[role];
-        if (!config) throw new Error(`Invalid role: ${role}`);
-
-        const ca = new FabricCAServices(config.url, undefined, config.name);
+        // 1. Ensure the wallet directory exists in the Backend root
         const walletPath = path.join(process.cwd(), 'wallet');
+        if (!fs.existsSync(walletPath)) {
+            fs.mkdirSync(walletPath);
+            console.log('Created wallet directory at:', walletPath);
+        }
+
         const wallet = await Wallets.newFileSystemWallet(walletPath);
 
-        // 2. Check if identity already exists
-        if (await wallet.get(userId)) return true;
+        for (const org of orgs) {
+            const adminId = `admin.${org.mspId}`;
 
-        // 3. Use the Admin of THAT specific Org to register
-        const adminId = `admin.${config.mspId}`; // Keep admin names distinct in the wallet
-        const adminIdentity = await wallet.get(adminId);
-        if (!adminIdentity) throw new Error(`Admin for ${config.mspId} not found.`);
+            // Check if already exists
+            const identity = await wallet.get(adminId);
+            if (identity) {
+                console.log(`Admin identity '${adminId}' already exists in the wallet`);
+                continue;
+            }
 
-        const provider = wallet.getProviderRegistry().getProvider(adminIdentity.type);
-        const adminUser = await provider.getUserContext(adminIdentity, adminId);
+            // 2. Enroll the admin user
+            // Note: 'adminpw' is the default password in fabric-samples test-network
+            const ca = new FabricCAServices(org.url, undefined, org.name);
+            const enrollment = await ca.enroll({ enrollmentID: 'admin', enrollmentSecret: 'adminpw' });
+            
+            const x509Identity = {
+                credentials: {
+                    certificate: enrollment.certificate,
+                    privateKey: enrollment.key.toBytes(),
+                },
+                mspId: org.mspId,
+                type: 'X.509',
+            };
 
-        // 4. Register with Attribute-Based Access Control (ABAC)
-        const secret = await ca.register({
-            affiliation: `${role}.department1`,
-            enrollmentID: userId,
-            role: 'client',
-            attrs: [{ name: 'role', value: role, ecert: true }]
-        }, adminUser);
+            await wallet.put(adminId, x509Identity);
+            console.log(`Successfully enrolled admin for ${org.mspId} and saved as ${adminId}.id`);
+        }
 
-        // 5. Enroll
-        const enrollment = await ca.enroll({ enrollmentID: userId, enrollmentSecret: secret });
-        const x509Identity = {
-            credentials: {
-                certificate: enrollment.certificate,
-                privateKey: enrollment.key.toBytes(),
-            },
-            mspId: config.mspId,
-            type: 'X.509',
-        };
-
-        await wallet.put(userId, x509Identity);
-        console.log(`Successfully enrolled ${role} user ${userId} into ${config.mspId}`);
-        return true;
     } catch (error) {
-        console.error(`Error: ${error.message}`);
-        return false;
+        console.error(`******** FAILED to enroll admin users: ${error}`);
+        // Log details if it's a connection error
+        if (error.message.includes('ECONNREFUSED')) {
+            console.error('ERROR: Could not connect to Fabric CA. Is your Docker network running?');
+        }
     }
 }
+
+main();

@@ -1,12 +1,12 @@
 const { supabase } = require("../utils/supabaseClient");
 
-// Configurable Weights
-const W_REP = 0.5; // Reputation Weight
-const W_PRICE = 0.3; // Price Weight
-const W_LOC = 0.2; // Location Weight
+// Configurable Weights (Location-focused)
+const W_LOC = 0.7; // Location Weight (70%)
+const W_REP = 0.3; // Reputation Weight (30%)
 
 // Helper: Haversine Distance (in km)
 const getDistanceKm = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
   const R = 6371; // Radius of the earth in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -34,8 +34,7 @@ const runMatchingAlgorithm = async (orderId) => {
     if (orderError || !order) throw new Error("Order not found");
 
     // --- Step 2: Initial Filtering (Get Eligible Farmers/Stock) ---
-    // We join estimated_stock with farmer to get location/reputation.
-    // Note: Assuming 'price_per_kg' exists in estimated_stock and 'reputation', 'latitude', 'longitude' in farmer.
+    // Filters: fruit_type, variant, grade, harvest date, quantity
     const { data: pool, error: poolError } = await supabase
       .from("estimated_stock")
       .select(
@@ -43,7 +42,7 @@ const runMatchingAlgorithm = async (orderId) => {
         id,
         quantity,
         grade,
-        price_per_kg, 
+        estimated_harvest_date,
         farmer:farmer_id (
           id,
           reputation,
@@ -54,8 +53,9 @@ const runMatchingAlgorithm = async (orderId) => {
       )
       .eq("fruit_type", order.fruit_type)
       .eq("variant", order.variant)
-      .eq("grade", order.grade) // Hard constraint on grade
-      .gte("quantity", 1); // Ensure they have some stock
+      .eq("grade", order.grade) // Hard constraint: exact grade match
+      .lte("estimated_harvest_date", order.required_date) // Farmer can harvest before buyer needs
+      .gte("quantity", 1); // Has stock available
 
     if (poolError) throw new Error(poolError.message);
     if (!pool || pool.length === 0) {
@@ -63,27 +63,21 @@ const runMatchingAlgorithm = async (orderId) => {
       return [];
     }
 
-    // --- Step 3: Multi-Factor Scoring ---
+    // --- Step 3: Prepare Candidates ---
+    const candidates = pool.map((item) => ({
+      stock_id: item.id,
+      farmer_id: item.farmer.id,
+      available_qty: item.quantity,
+      estimated_harvest_date: item.estimated_harvest_date,
+      reputation: item.farmer.reputation || 2.5, // Default neutral reputation
+      lat: item.farmer.latitude,
+      lon: item.farmer.longitude,
+      locationScore: 0,
+      finalScore: 0,
+    }));
 
-    // 3a. Prepare Data & Calculate Max Price for Normalization
-    let maxPrice = 0;
-    const candidates = pool.map((item) => {
-      const price = item.price_per_kg || 0; // Default to 0 if missing
-      if (price > maxPrice) maxPrice = price;
-      return {
-        stock_id: item.id,
-        farmer_id: item.farmer.id,
-        available_qty: item.quantity,
-        price: price,
-        reputation: item.farmer.reputation || 0.5, // Default neutral reputation
-        lat: item.farmer.latitude,
-        lon: item.farmer.longitude,
-        score: 0,
-      };
-    });
-
-    // 3b. Calculate Location Score (Clustering)
-    // Logic: Count neighbors within 10km. Normalize by dividing by total candidates.
+    // --- Step 4: Calculate Location Score (Clustering) ---
+    // Higher score = farmer is in a dense cluster (good for logistics)
     candidates.forEach((c1) => {
       let neighbors = 0;
       candidates.forEach((c2) => {
@@ -97,23 +91,19 @@ const runMatchingAlgorithm = async (orderId) => {
         candidates.length > 1 ? neighbors / (candidates.length - 1) : 0;
     });
 
-    // 3c. Calculate Final Match Score
+    // --- Step 5: Calculate Final Match Score ---
     candidates.forEach((c) => {
-      // Normalize Price: Lower is better. 1 - (price / max). Avoid div by zero.
-      const priceScore = maxPrice > 0 ? 1 - c.price / maxPrice : 1;
-
-      // Normalize Reputation: Assuming DB stores 0-5, normalize to 0-1.
-      // If already 0-1, use as is. Let's assume 0-5 scale.
+      // Normalize Reputation: DB stores 0-5, normalize to 0-1
       const repScore = c.reputation / 5;
 
-      c.finalScore =
-        W_REP * repScore + W_PRICE * priceScore + W_LOC * c.locationScore;
+      // Final score: 70% Location + 30% Reputation
+      c.finalScore = W_LOC * c.locationScore + W_REP * repScore;
     });
 
-    // Sort by Score Descending
+    // Sort by Score Descending (best matches first)
     candidates.sort((a, b) => b.finalScore - a.finalScore);
 
-    // --- Step 4: Aggregation Loop (Greedy) ---
+    // --- Step 6: Aggregation Loop (Greedy Quantity Allocation) ---
     let remainingQty = order.quantity;
     const fulfillmentPlan = [];
 
@@ -128,25 +118,27 @@ const runMatchingAlgorithm = async (orderId) => {
         farmer_id: candidate.farmer_id,
         quantity_allocated: takeQty,
         match_score: candidate.finalScore,
+        farmer_lat: candidate.lat,
+        farmer_lon: candidate.lon,
+        farmer_reputation: candidate.reputation,
       });
 
       remainingQty -= takeQty;
     }
 
-    // --- Step 5: Proposal and Execution (Save to DB) ---
-    // We save the "deals" to a table, e.g., 'order_assignments'
-    if (fulfillmentPlan.length > 0) {
-      const { error: insertError } = await supabase
-        .from("order_assignments")
-        .insert(fulfillmentPlan);
+    // NOTE: We do NOT save to DB here anymore.
+    // Matches are returned to buyer for selection first.
+    // Only after buyer selects and farmer confirms, we save to order_assignments.
 
-      if (insertError)
-        console.error("[Matching] Failed to save assignments:", insertError);
-      else
-        console.log(
-          `[Matching] Successfully assigned ${fulfillmentPlan.length} farmers to Order ${orderId}`
-        );
+    if (remainingQty > 0) {
+      console.log(
+        `[Matching] Warning: Order ${orderId} can only be partially fulfilled. Remaining: ${remainingQty} units`
+      );
     }
+
+    console.log(
+      `[Matching] Found ${fulfillmentPlan.length} potential matches for Order ${orderId}`
+    );
 
     return fulfillmentPlan;
   } catch (err) {
@@ -155,4 +147,139 @@ const runMatchingAlgorithm = async (orderId) => {
   }
 };
 
-module.exports = { runMatchingAlgorithm };
+// Batch matching for all unfulfilled orders (called by cron job)
+const runBatchMatching = async () => {
+  console.log(
+    `[Batch Matching] Starting batch run at ${new Date().toISOString()}`
+  );
+
+  try {
+    // Get all OPEN orders that haven't been fully matched and not expired
+    const { data: openOrders, error: ordersError } = await supabase
+      .from("placed_orders")
+      .select("id, required_date")
+      .eq("status", "OPEN")
+      .gte("required_date", new Date().toISOString().split("T")[0]); // Not expired
+
+    if (ordersError) throw new Error(ordersError.message);
+    if (!openOrders || openOrders.length === 0) {
+      console.log("[Batch Matching] No open orders to process.");
+      return { processed: 0, matched: 0 };
+    }
+
+    console.log(`[Batch Matching] Found ${openOrders.length} open orders.`);
+
+    let matchedCount = 0;
+
+    for (const order of openOrders) {
+      const result = await runMatchingAlgorithm(order.id);
+      if (result.length > 0) {
+        matchedCount++;
+        // Update order status to indicate matches are pending acceptance
+        await supabase
+          .from("placed_orders")
+          .update({
+            status: "PENDING_ACCEPTANCE",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+      }
+    }
+
+    console.log(
+      `[Batch Matching] Completed. Matched: ${matchedCount}/${openOrders.length}`
+    );
+    return { processed: openOrders.length, matched: matchedCount };
+  } catch (err) {
+    console.error("[Batch Matching] Failed:", err);
+    return { processed: 0, matched: 0, error: err.message };
+  }
+};
+
+// Trigger matching when new stock is added by a farmer
+const onNewStockAdded = async (stockId) => {
+  console.log(`[Stock Event] New stock added: ${stockId}`);
+
+  try {
+    // Get the new stock details
+    const { data: stock, error: stockError } = await supabase
+      .from("estimated_stock")
+      .select("fruit_type, variant, grade, estimated_harvest_date")
+      .eq("id", stockId)
+      .single();
+
+    if (stockError || !stock) {
+      console.log("[Stock Event] Could not fetch stock details.");
+      return;
+    }
+
+    // Find matching OPEN orders that could be fulfilled by this stock
+    const { data: matchingOrders, error: ordersError } = await supabase
+      .from("placed_orders")
+      .select("id")
+      .eq("status", "OPEN")
+      .eq("fruit_type", stock.fruit_type)
+      .eq("variant", stock.variant)
+      .eq("grade", stock.grade)
+      .gte("required_date", stock.estimated_harvest_date); // Buyer needs it after harvest date
+
+    if (ordersError || !matchingOrders || matchingOrders.length === 0) {
+      console.log("[Stock Event] No matching open orders found.");
+      return;
+    }
+
+    console.log(
+      `[Stock Event] Found ${matchingOrders.length} potential orders to match.`
+    );
+
+    // Run matching for each relevant order
+    for (const order of matchingOrders) {
+      const result = await runMatchingAlgorithm(order.id);
+      if (result.length > 0) {
+        await supabase
+          .from("placed_orders")
+          .update({
+            status: "PENDING_ACCEPTANCE",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+      }
+    }
+
+    console.log("[Stock Event] Matching completed for new stock.");
+  } catch (err) {
+    console.error("[Stock Event] Matching failed:", err);
+  }
+};
+
+// Mark expired orders (orders past their required_date with no match)
+const markExpiredOrders = async () => {
+  console.log(`[Expiry Check] Running at ${new Date().toISOString()}`);
+
+  try {
+    const today = new Date().toISOString().split("T")[0];
+
+    const { data: expiredOrders, error } = await supabase
+      .from("placed_orders")
+      .update({ status: "EXPIRED", updated_at: new Date().toISOString() })
+      .eq("status", "OPEN")
+      .lt("required_date", today)
+      .select("id");
+
+    if (error) throw new Error(error.message);
+
+    const count = expiredOrders ? expiredOrders.length : 0;
+    console.log(`[Expiry Check] Marked ${count} orders as expired.`);
+    return { expired: count };
+  } catch (err) {
+    console.error("[Expiry Check] Failed:", err);
+    return { expired: 0, error: err.message };
+  }
+};
+
+module.exports = {
+  runMatchingAlgorithm,
+  runBatchMatching,
+  onNewStockAdded,
+  markExpiredOrders,
+};
