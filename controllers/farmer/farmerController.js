@@ -1,5 +1,5 @@
 const { supabase } = require("../../supabaseClient");
-const { computeFreshRoutePrice } = require("../../services/pricingService");
+const { computeFreshRoutePrice } = require("../../services/farmer/pricingService");
 
 const HOME_LIMIT = 3;
 

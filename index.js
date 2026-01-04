@@ -13,8 +13,8 @@ const fruitsRoutes = require("./routes/fruitsRoutes");
 const predictStockRoutes = require("./routes/predictStockRoutes");
 
 const orderRoutes = require("./routes/orderRoutes");
-const { startSMSScheduler } = require("./services/smsScheduler");
-const { startDambullaScheduler } = require("./services/dambullaScheduler");
+const { startSMSScheduler } = require("./services/farmer/smsScheduler");
+const { startDambullaScheduler } = require("./services/farmer/dambullaScheduler");
 
 const app = express();
 app.use(cors());

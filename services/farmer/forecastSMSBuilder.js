@@ -1,5 +1,5 @@
 // Forecast SMS builder - creates farmer-friendly SMS messages from forecast data
-const { supabase } = require("../supabaseClient");
+const { supabase } = require("../../supabaseClient");
 
 /**
  * Build SMS message from forecast data

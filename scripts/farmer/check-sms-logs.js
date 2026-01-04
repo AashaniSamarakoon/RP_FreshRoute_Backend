@@ -2,7 +2,7 @@
 // Usage: node scripts/check-sms-logs.js
 
 require("dotenv").config();
-const { supabase } = require("../supabaseClient");
+const { supabase } = require("../../supabaseClient");
 
 async function checkSMSLogs() {
   try {

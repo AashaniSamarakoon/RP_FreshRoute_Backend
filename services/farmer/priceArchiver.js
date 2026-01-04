@@ -4,7 +4,7 @@
  * Keeps economic_center_prices table with only current/live prices
  */
 
-const { supabase } = require("../supabaseClient");
+const { supabase } = require("../../supabaseClient");
 
 /**
  * Move prices older than today to historical_market_prices table

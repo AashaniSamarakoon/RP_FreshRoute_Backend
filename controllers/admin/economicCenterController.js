@@ -1,6 +1,6 @@
 // controllers/admin/economicCenterController.js
 const { supabase } = require("../../supabaseClient");
-const { importDambullaPrices } = require("../../services/dambullaScraper");
+const { importDambullaPrices } = require("../../services/farmer/dambullaScraper");
 
 async function importEconomicCenterPrices(req, res) {
   try {

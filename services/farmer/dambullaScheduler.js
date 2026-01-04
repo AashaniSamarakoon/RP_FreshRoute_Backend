@@ -41,7 +41,7 @@ function startDambullaScheduler({ runOnStart = false } = {}) {
 
   if (runOnStart) {
     // Check if today's prices already exist before importing
-    const { supabase } = require("../supabaseClient");
+    const { supabase } = require("../../supabaseClient");
     const today = new Date().toISOString().slice(0, 10);
     const tomorrow = new Date(new Date(today).getTime() + 86400000).toISOString().split("T")[0];
     

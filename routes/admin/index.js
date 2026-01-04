@@ -1,5 +1,5 @@
 const express = require("express");
-const { triggerSMSNow } = require("../../services/smsScheduler");
+const { triggerSMSNow } = require("../../services/farmer/smsScheduler");
 const {
   importEconomicCenterPrices,
   getEconomicCenterPrices,

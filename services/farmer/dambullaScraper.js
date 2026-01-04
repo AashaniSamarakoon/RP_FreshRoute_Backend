@@ -1,6 +1,6 @@
 // services/dambullaScraper.js
 const fetch = require("node-fetch").default || require("node-fetch");
-const { supabase } = require("../supabaseClient");
+const { supabase } = require("../../supabaseClient");
 
 const DAMBULLA_URL = "https://dambulladec.com/home-dailyprice";
 const ECONOMIC_CENTER = "Dambulla Dedicated Economic Centre";
@@ -15,10 +15,13 @@ function todayCapturedAtISO() {
   return new Date(`${y}-${m}-${d}T06:00:00.000Z`).toISOString();
 }
 
-async function getLatestPricesFallback(capturedAt) {
+async function getLatestPricesFallback(capturedAt, source = "live") {
   // Pull most recent price per fruit for this economic center and clone as today's entry
+  // source can be "live" (from economic_center_prices) or "historical" (from historical_market_prices)
+  const tableName = source === "historical" ? "historical_market_prices" : "economic_center_prices";
+  
   const { data, error } = await supabase
-    .from("economic_center_prices")
+    .from(tableName)
     .select("fruit_id, fruit_name, variety, price_per_unit, unit, currency")
     .eq("economic_center", ECONOMIC_CENTER)
     .order("captured_at", { ascending: false })
@@ -41,7 +44,7 @@ async function getLatestPricesFallback(capturedAt) {
     price_per_unit: r.price_per_unit,
     unit: r.unit,
     currency: r.currency || "LKR",
-    source_url: `${DAMBULLA_URL} (fallback)`,
+    source_url: `${DAMBULLA_URL} (fallback from ${source})`,
     captured_at: capturedAt,
   }));
 
@@ -162,13 +165,20 @@ async function importDambullaPrices() {
     let rows = await scrapeDambulla();
 
     if (!rows || rows.length === 0) {
-      console.warn("[Dambulla Import] No scraped rows. Using latest available prices as fallback.");
-      rows = await getLatestPricesFallback(capturedAt);
+      console.warn("[Dambulla Import] No scraped rows. Using latest live prices as fallback.");
+      rows = await getLatestPricesFallback(capturedAt, "live");
+      usedFallback = true;
+    }
+
+    // If live fallback empty, try historical prices
+    if (!rows || rows.length === 0) {
+      console.warn("[Dambulla Import] No live prices. Using historical prices as fallback.");
+      rows = await getLatestPricesFallback(capturedAt, "historical");
       usedFallback = true;
     }
 
     if (!rows || rows.length === 0) {
-      throw new Error("No Dambulla prices available (scrape + fallback empty)");
+      throw new Error("No Dambulla prices available (scrape + live fallback + historical fallback all empty)");
     }
 
     // Normalize captured_at to today's deterministic timestamp

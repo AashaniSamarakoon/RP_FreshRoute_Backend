@@ -5,7 +5,7 @@
  */
 
 require("dotenv").config();
-const { archiveOldPrices } = require("../services/priceArchiver");
+const { archiveOldPrices } = require("../../services/farmer/priceArchiver");
 
 async function testArchive() {
   try {

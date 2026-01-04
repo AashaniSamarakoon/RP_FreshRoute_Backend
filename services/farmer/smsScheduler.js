@@ -102,6 +102,7 @@ function startSMSScheduler() {
   });
 
   console.log(`✓ SMS scheduler started: runs daily at ${MORNING_HOUR}:00 ${TIMEZONE}`);
+  console.log(`[SMS Scheduler] Next 6:00 AM run will trigger automatic SMS to farmers with alerts enabled`);
   schedulerStarted = true;
 }
 

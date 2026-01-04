@@ -5,7 +5,7 @@
  */
 
 require("dotenv").config();
-const { supabase } = require("../supabaseClient");
+const { supabase } = require("../../supabaseClient");
 
 async function setupHistoricalTable() {
   try {
