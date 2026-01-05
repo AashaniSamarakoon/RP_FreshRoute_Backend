@@ -16,6 +16,15 @@ const {
   getHistoricalPrices,
 } = require("../../controllers/farmer/farmerController");
 const { getSMSPreferences, updateSMSPreferences } = require("../../controllers/farmer/smsController");
+const {
+  getNotifications: getNotificationsNew,
+  getNotificationById,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  getNotificationStats,
+  getNotificationsByCategory,
+} = require("../../controllers/farmer/notificationsController");
 
 const router = express.Router();
 
@@ -38,9 +47,20 @@ router.get("/prices/history", getHistoricalPrices);
 // Accuracy
 router.get("/accuracy", getAccuracyInsights);
 
-// Notifications & Feedback
-router.get("/notifications", getNotifications);
-router.patch("/notifications/:id/read", markNotificationRead);
+// Notifications (New improved endpoints)
+router.get("/notifications", getNotificationsNew);
+router.get("/notifications/stats", getNotificationStats);
+router.get("/notifications/category/:category", getNotificationsByCategory);
+router.get("/notifications/:id", getNotificationById);
+router.put("/notifications/:id/read", markAsRead);
+router.put("/notifications/read-all", markAllAsRead);
+router.delete("/notifications/:id", deleteNotification);
+
+// Legacy notification endpoints (kept for backward compatibility)
+router.get("/old-notifications", getNotifications);
+router.patch("/old-notifications/:id/read", markNotificationRead);
+
+// Feedback
 router.get("/feedback", getFeedback);
 router.post("/feedback", createFeedback);
 
