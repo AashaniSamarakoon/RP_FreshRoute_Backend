@@ -3,9 +3,9 @@ const { supabase } = require("../../utils/supabaseClient");
 const getFruits = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from("fruit_properties_1")
-      .select("id, fruit_name, variant")
-      .order("fruit_name", { ascending: true });
+      .from("fruits")
+      .select("id, name, variety")
+      .order("name", { ascending: true });
 
     if (error) {
       console.error("Supabase error fetching fruits:", error);

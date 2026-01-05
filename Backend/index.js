@@ -11,14 +11,14 @@ const {
 } = require("./Services/matchingService");
 const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
-const fruitsRoutes = require("./routes/shared/fruitsRoutes");
+const fruitsRoutes = require("./routes/common/fruitsRoutes");
 const predictStockRoutes = require("./routes/farmer/predictStockRoutes");
 const orderRoutes = require("./routes/buyer/orderRoutes");
 const farmerDashboardRoutes = require("./routes/farmer/dashboardRoutes");
 const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes");
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
-
+const trustRoutes = require("./routes/common/trustRoutes");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -55,6 +55,7 @@ app.use(
 
 // Auth routes
 app.use("/api/auth", authRoutes);
+app.use("/api/trust", trustRoutes);
 
 // Dashboard routes
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
