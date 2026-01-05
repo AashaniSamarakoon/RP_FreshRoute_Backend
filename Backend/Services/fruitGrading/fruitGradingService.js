@@ -23,7 +23,7 @@ class FruitGradingService {
     this.classes = DEFAULT_CLASSES;
     this.modelPath = path.join(
       __dirname,
-      "..",
+      "../../..",
       "AI_layer",
       "fruit_grading",
       "best_mango_mobilenetv3.onnx"

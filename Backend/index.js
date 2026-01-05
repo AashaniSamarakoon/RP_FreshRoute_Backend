@@ -19,6 +19,9 @@ const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 const trustRoutes = require("./routes/common/trustRoutes");
+const fruitGradingRoutes = require("./routes/common/fruitGradingRoutes");
+const fruitGradingService = require("./Services/fruitGrading/fruitGradingService");
+const multer = require("multer");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -57,16 +60,55 @@ app.use(
 app.use("/api/auth", authRoutes);
 app.use("/api/trust", trustRoutes);
 
+// Fruit Grading Routes (no auth required for now, add if needed)
+app.use("/api/fruit-grading", fruitGradingRoutes);
+
 // Dashboard routes
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
 app.use("/api/transporter/dashboard", transporterDashboardRoutes);
 app.use("/api/buyer/dashboard", buyerDashboardRoutes);
 
+// Error handler for multer errors (must be after all routes)
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        message: "File too large. Maximum size is 10MB per file.",
+      });
+    }
+    if (error.code === "LIMIT_FILE_COUNT") {
+      return res.status(400).json({
+        message: "Too many files. Maximum 5 files allowed.",
+      });
+    }
+    return res.status(400).json({ message: error.message });
+  }
+  if (error) {
+    return res.status(400).json({ message: error.message });
+  }
+  next();
+});
+
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
-app.listen(port, "0.0.0.0", () => {
-  console.log(`FreshRoute backend running on port ${port}`);
-});
+
+// Load ONNX model on startup
+async function startServer() {
+  try {
+    console.log("Loading fruit grading model...");
+    await fruitGradingService.loadModel();
+    console.log("✅ Fruit grading model loaded successfully");
+  } catch (error) {
+    console.error("⚠️  Warning: Failed to load fruit grading model:", error.message);
+    console.error("   Fruit grading endpoints will not be available.");
+  }
+
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`FreshRoute backend running on port ${port}`);
+  });
+}
+
+startServer();
 
 // ---------- SCHEDULED JOBS ----------
 // Run batch matching every 2 hours (at minute 0)
