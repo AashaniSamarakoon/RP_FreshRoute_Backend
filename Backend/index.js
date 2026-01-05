@@ -13,6 +13,8 @@ const {
 } = require("./Services/matchingService");
 const { startSMSScheduler } = require("./Services/farmer/smsScheduler");
 const { startDambullaScheduler } = require("./Services/farmer/dambullaScheduler");
+const { initializeTodaysPrices, updateFreshRoutePrices } = require("./Services/farmer/freshRoutePriceUpdater");
+const { getFreshRoutePrices } = require("./routes/farmer/freshRoutePricesEndpoint");
 const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
 const fruitsRoutes = require("./routes/common/fruitsRoutes");
@@ -102,6 +104,14 @@ app.use(
   authMiddleware,
   requireRole("buyer"),
   orderRoutes
+);
+
+// Buyer FreshRoute prices (same payload as farmer)
+app.get(
+  "/api/buyer/prices/freshroute",
+  authMiddleware,
+  requireRole("buyer"),
+  getFreshRoutePrices
 );
 
 // Auth routes
@@ -302,3 +312,25 @@ cron.schedule("0 0 * * *", async () => {
 console.log(
   "[Cron] Scheduled jobs initialized: Batch matching (every 2h), Expiry check (daily)"
 );
+
+// Initialize today's FreshRoute prices on startup
+(async () => {
+  try {
+    console.log("[Init] Initializing FreshRoute prices...");
+    const result = await initializeTodaysPrices();
+    console.log("[Init] FreshRoute prices initialized:", result);
+  } catch (err) {
+    console.warn("[Init] Warning initializing prices:", err.message);
+  }
+})();
+
+// Update FreshRoute prices daily at 6:00 AM
+cron.schedule("0 6 * * *", async () => {
+  console.log("[Cron] Running daily FreshRoute price update...");
+  try {
+    const result = await updateFreshRoutePrices();
+    console.log("[Cron] FreshRoute price update completed:", result);
+  } catch (err) {
+    console.error("[Cron] FreshRoute price update failed:", err.message);
+  }
+});

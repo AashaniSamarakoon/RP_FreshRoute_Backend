@@ -5,6 +5,10 @@ const {
   getEconomicCenterPrices,
   getScrapingJobStatus,
 } = require("../../controllers/admin/economicCenterController");
+const {
+  testUpdateFreshRoutePrices,
+  testInitializePrices,
+} = require("../../routes/admin/testFreshRouteEndpoint");
 
 const router = express.Router();
 
@@ -24,5 +28,9 @@ router.post("/sms/trigger", async (req, res) => {
 router.post("/economic-center/import", importEconomicCenterPrices);
 router.get("/economic-center/prices", getEconomicCenterPrices);
 router.get("/scraping-jobs/:jobId", getScrapingJobStatus);
+
+// FreshRoute pricing management (test endpoints)
+router.get("/test/freshroute/update", testUpdateFreshRoutePrices);
+router.get("/test/freshroute/initialize", testInitializePrices);
 
 module.exports = router;
