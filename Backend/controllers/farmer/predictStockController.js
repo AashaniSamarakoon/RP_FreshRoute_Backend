@@ -2,6 +2,50 @@ const { supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { onNewStockAdded } = require("../../Services/matchingService");
 
+// Get stock by ID
+const getStockById = async (req, res) => {
+  try {
+    const { stockId } = req.params;
+
+    if (!stockId) {
+      return res.status(400).json({ message: "Stock ID is required" });
+    }
+
+    const { data, error } = await supabase
+      .from("estimated_stock")
+      .select(
+        `
+        *,
+        farmer:farmer_id (
+          id,
+          latitude,
+          longitude,
+          reputation,
+          user:user_id (
+            id,
+            name,
+            email,
+            phone
+          )
+        )
+      `
+      )
+      .eq("id", stockId)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ message: "Stock not found" });
+    }
+
+    return res.status(200).json({ stock: data });
+  } catch (err) {
+    console.error("GetStockById Error:", err);
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
+  }
+};
+
 const submitPredictStock = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
@@ -121,4 +165,4 @@ const submitPredictStock = async (req, res) => {
   }
 };
 
-module.exports = { submitPredictStock };
+module.exports = { submitPredictStock, getStockById };

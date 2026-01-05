@@ -47,7 +47,13 @@ const runMatchingAlgorithm = async (orderId) => {
           id,
           reputation,
           latitude,
-          longitude
+          longitude,
+          user:user_id (
+            id,
+            name,
+            email,
+            phone
+          )
         )
       `
       )
@@ -72,6 +78,10 @@ const runMatchingAlgorithm = async (orderId) => {
       reputation: item.farmer.reputation || 2.5, // Default neutral reputation
       lat: item.farmer.latitude,
       lon: item.farmer.longitude,
+      // Farmer user details
+      farmer_name: item.farmer.user?.name || null,
+      farmer_email: item.farmer.user?.email || null,
+      farmer_phone: item.farmer.user?.phone || null,
       locationScore: 0,
       finalScore: 0,
     }));
@@ -121,6 +131,11 @@ const runMatchingAlgorithm = async (orderId) => {
         farmer_lat: candidate.lat,
         farmer_lon: candidate.lon,
         farmer_reputation: candidate.reputation,
+        // Farmer details from users table
+        farmer_name: candidate.farmer_name,
+        farmer_email: candidate.farmer_email,
+        farmer_phone: candidate.farmer_phone,
+        estimated_harvest_date: candidate.estimated_harvest_date,
       });
 
       remainingQty -= takeQty;
