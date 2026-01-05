@@ -10,6 +10,9 @@ const transporterRoutes = require("./routes/transporterRoutes");
 const fruitGradingRoutes = require("./routes/fruitGradingRoutes");
 const fruitGradingService = require("./services/fruitGradingService");
 const multer = require("multer");
+const fruitsRoutes = require("./routes/fruitsRoutes");
+const predictStockRoutes = require("./routes/predictStockRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 
 const app = express();
 app.use(cors());
@@ -25,6 +28,25 @@ app.use(
 
 // Fruit Grading Routes (no auth required for now, add if needed)
 app.use("/api/fruit-grading", fruitGradingRoutes);
+
+// Fruit properties (GET id, fruit_name, variant)
+app.use("/api/fruit-properties", authMiddleware, fruitsRoutes);
+
+// Farmer predict stock submission
+app.use(
+  "/api/farmer/add-predict-stock",
+  authMiddleware,
+  requireRole("farmer"),
+  predictStockRoutes
+);
+
+// Buyer place order
+app.use(
+  "/api/buyer/place-order",
+  authMiddleware,
+  requireRole("buyer"),
+  orderRoutes
+);
 
 // ---------- AUTH ROUTES ----------
 
@@ -77,6 +99,49 @@ app.post("/api/auth/signup", async (req, res) => {
     }
 
     const user = insertedUsers[0];
+
+    // 4. Create role-specific entry
+    if (role === "farmer") {
+      const { error: farmerError } = await supabase
+        .from("farmer")
+        .insert({ user_id: user.id });
+
+      if (farmerError) {
+        console.error("Failed to create farmer entry:", farmerError);
+        // Clean up user if farmer creation fails
+        await supabase.from("users").delete().eq("id", user.id);
+        return res
+          .status(500)
+          .json({ message: "Failed to create farmer user" });
+      }
+    } else if (role === "buyer") {
+      const { error: buyerError } = await supabase
+        .from("buyers")
+        .insert({ user_id: user.id });
+
+      if (buyerError) {
+        console.error("Failed to create buyer entry:", buyerError);
+        // Clean up user if buyer creation fails
+        await supabase.from("users").delete().eq("id", user.id);
+        return res
+          .status(500)
+          .json({ message: "Failed to create buyer user" });
+      }
+    } else if (role === "transporter") {
+      const { error: transporterError } = await supabase
+        .from("transporter")
+        .insert({ user_id: user.id });
+
+      if (transporterError) {
+        console.error("Failed to create transporter entry:", transporterError);
+        // Clean up user if transporter creation fails
+        await supabase.from("users").delete().eq("id", user.id);
+        return res
+          .status(500)
+          .json({ message: "Failed to create transporter user" });
+      }
+    }
+
     const token = generateToken(user);
 
     res.status(201).json({ token, user });
