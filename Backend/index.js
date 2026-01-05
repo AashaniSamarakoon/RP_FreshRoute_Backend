@@ -22,6 +22,9 @@ const trustRoutes = require("./routes/common/trustRoutes");
 const fruitGradingRoutes = require("./routes/common/fruitGradingRoutes");
 const fruitGradingService = require("./Services/fruitGrading/fruitGradingService");
 const multer = require("multer");
+const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
+const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -88,6 +91,20 @@ app.use((error, req, res, next) => {
   }
   next();
 });
+
+app.use(
+  "/api/logistics",
+  // authMiddleware,
+  // requireRole("transporter"),
+  logisticsRoutes
+);
+
+app.use(
+  "/api/telemetry",
+  // authMiddleware,
+  // requireRole("transporter"),
+  telemetryRoutes
+);
 
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
