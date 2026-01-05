@@ -19,6 +19,9 @@ const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 const trustRoutes = require("./routes/common/trustRoutes");
+const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
+const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -61,6 +64,20 @@ app.use("/api/trust", trustRoutes);
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
 app.use("/api/transporter/dashboard", transporterDashboardRoutes);
 app.use("/api/buyer/dashboard", buyerDashboardRoutes);
+
+app.use(
+  "/api/logistics",
+  // authMiddleware,
+  // requireRole("transporter"),
+  logisticsRoutes
+);
+
+app.use(
+  "/api/telemetry",
+  // authMiddleware,
+  // requireRole("transporter"),
+  telemetryRoutes
+);
 
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
