@@ -24,6 +24,7 @@ const fruitGradingService = require("./Services/fruitGrading/fruitGradingService
 const multer = require("multer");
 const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
 const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
+const gradingRoutes = require("./routes/transporter/gradingRoutes");
 
 const app = express();
 app.use(cors());
@@ -35,6 +36,14 @@ app.use(
   authMiddleware,
   requireRole("transporter"),
   transporterRoutes
+);
+
+// Grading routes (transporter role required)
+app.use(
+  "/api/gradings",
+  authMiddleware,
+  requireRole("transporter"),
+  gradingRoutes
 );
 
 // Fruit properties (GET id, fruit_name, variant)
@@ -63,8 +72,13 @@ app.use(
 app.use("/api/auth", authRoutes);
 app.use("/api/trust", trustRoutes);
 
-// Fruit Grading Routes (no auth required for now, add if needed)
-app.use("/api/fruit-grading", fruitGradingRoutes);
+// Fruit Grading Routes (buyer or transporter role required)
+app.use(
+  "/api/fruit-grading",
+  authMiddleware,
+  requireRole("buyer", "transporter"),
+  fruitGradingRoutes
+);
 
 // Dashboard routes
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
@@ -76,18 +90,32 @@ app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
+        success: false,
         message: "File too large. Maximum size is 10MB per file.",
       });
     }
     if (error.code === "LIMIT_FILE_COUNT") {
       return res.status(400).json({
+        success: false,
         message: "Too many files. Maximum 5 files allowed.",
       });
     }
-    return res.status(400).json({ message: error.message });
+    if (error.code === "LIMIT_FIELD_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "Field too large. Maximum size is 50MB per field.",
+      });
+    }
+    return res.status(400).json({ 
+      success: false,
+      message: error.message 
+    });
   }
   if (error) {
-    return res.status(400).json({ message: error.message });
+    return res.status(400).json({ 
+      success: false,
+      message: error.message 
+    });
   }
   next();
 });
