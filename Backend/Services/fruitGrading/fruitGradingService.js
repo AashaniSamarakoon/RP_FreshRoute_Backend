@@ -2,7 +2,7 @@
 const ort = require("onnxruntime-node");
 const sharp = require("sharp");
 const path = require("path");
-const logger = require("../utils/logger").fruitGrading;
+const logger = require("../../utils/logger").fruitGrading;
 
 // ImageNet normalization constants (used during training)
 const IMAGENET_MEAN = [0.485, 0.456, 0.406];

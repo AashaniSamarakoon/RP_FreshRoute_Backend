@@ -1,6 +1,6 @@
 // controllers/fruitGradingController.js
-const fruitGradingService = require("../services/fruitGradingService");
-const logger = require("../utils/logger").fruitGrading;
+const fruitGradingService = require("../../Services/fruitGrading/fruitGradingService");
+const logger = require("../../utils/logger").fruitGrading;
 
 /**
  * Predict fruit grades for up to 5 images

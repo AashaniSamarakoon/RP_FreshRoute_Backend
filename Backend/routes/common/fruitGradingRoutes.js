@@ -4,8 +4,8 @@ const multer = require("multer");
 const {
   predictFruitGrades,
   healthCheck,
-} = require("../controllers/fruitGradingController");
-const logger = require("../utils/logger").fruitGrading;
+} = require("../../controllers/common/fruitGradingController");
+const logger = require("../../utils/logger").fruitGrading;
 
 const router = express.Router();
 
