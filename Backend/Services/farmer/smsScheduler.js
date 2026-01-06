@@ -6,6 +6,7 @@ const {
   getSMSSubscribedFarmers,
   compileSMSBatch,
   logSMSSend,
+  wasForecastSMSSentToday,
 } = require("./forecastSMSBuilder");
 
 const MORNING_HOUR = process.env.SMS_MORNING_HOUR || 6; // 6 AM
@@ -25,6 +26,13 @@ async function sendMorningForecastSMS() {
   console.log(`\n📅 [${hours}:${mins}] Running daily SMS forecast alert job...`);
 
   try {
+    // Check if already sent today
+    const alreadySent = await wasForecastSMSSentToday();
+    if (alreadySent) {
+      console.log("ℹ️ Daily forecast SMS already sent today. Skipping.");
+      return;
+    }
+
     let forecasts = [];
     let farmers = [];
 

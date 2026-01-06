@@ -2,8 +2,8 @@
 // Usage: node scripts/test-sms-send.js <phone_number>
 
 require("dotenv").config();
-const { sendSMS, formatPhoneNumber } = require("../../services/farmer/smsService");
-const { supabase } = require("../../supabaseClient");
+const { sendSMS, formatPhoneNumber } = require("../../Services/farmer/smsService");
+const { supabase } = require("../../utils/supabaseClient");
 
 async function testSMSSend() {
   const phoneArg = process.argv[2];

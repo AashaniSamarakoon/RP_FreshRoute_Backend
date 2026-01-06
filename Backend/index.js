@@ -11,10 +11,11 @@ const {
   runBatchMatching,
   markExpiredOrders,
 } = require("./Services/matchingService");
-const { startSMSScheduler } = require("./Services/farmer/smsScheduler");
+const { startSMSScheduler, triggerSMSNow } = require("./Services/farmer/smsScheduler");
 const { startDambullaScheduler } = require("./Services/farmer/dambullaScheduler");
 const { initializeTodaysPrices, updateFreshRoutePrices } = require("./Services/farmer/freshRoutePriceUpdater");
 const { getFreshRoutePrices } = require("./routes/farmer/freshRoutePricesEndpoint");
+const { calculateAccuracyInsights } = require("./Services/farmer/accuracyInsights");
 const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
 const fruitsRoutes = require("./routes/common/fruitsRoutes");
@@ -26,6 +27,8 @@ const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 const farmerRoutes = require("./routes/farmer");
 const trustRoutes = require("./routes/common/trustRoutes");
+const alertRoutes = require("./routes/alertRoutes");
+const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -117,6 +120,12 @@ app.get(
 // Auth routes
 app.use("/api/auth", authRoutes);
 app.use("/api/trust", trustRoutes);
+
+// Alert routes (for notifications and SMS)
+app.use("/api/alerts", alertRoutes);
+
+// Accuracy insights routes (forecast accuracy analysis)
+app.use("/api/farmer/accuracy", authMiddleware, requireRole("farmer"), accuracyRoutes);
 
 // Dashboard routes
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
@@ -321,6 +330,31 @@ console.log(
     console.log("[Init] FreshRoute prices initialized:", result);
   } catch (err) {
     console.warn("[Init] Warning initializing prices:", err.message);
+  }
+})();
+
+// Calculate accuracy insights on startup
+(async () => {
+  try {
+    console.log("[Init] Calculating accuracy insights...");
+    const insights = await calculateAccuracyInsights();
+    console.log("[Init] Accuracy insights calculated:", {
+      overallAccuracy: insights.summary.overallAccuracy,
+      comparisons: insights.summary.totalComparisons,
+      fruitsAnalyzed: insights.summary.fruitsAnalyzed,
+    });
+  } catch (err) {
+    console.warn("[Init] Warning calculating accuracy insights:", err.message);
+  }
+})();
+
+// Send daily forecast SMS on startup if not sent today
+(async () => {
+  try {
+    console.log("[Init] Checking if daily forecast SMS needs to be sent...");
+    await triggerSMSNow();
+  } catch (err) {
+    console.warn("[Init] Warning triggering daily forecast SMS:", err.message);
   }
 })();
 
