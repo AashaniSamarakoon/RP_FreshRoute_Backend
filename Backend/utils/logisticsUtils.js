@@ -1,7 +1,5 @@
-// utils/logisticsUtils.js
+const axios = require("axios");
 
-// 1. COORDINATES MAP (Major Sri Lankan Logistics Hubs)
-// If the order doesn't have exact lat/long, we fallback to these.
 const SRI_LANKA_CITIES = {
   colombo: { lat: 6.9271, lng: 79.8612 },
   dambulla: { lat: 7.8731, lng: 80.7718 },
@@ -12,53 +10,50 @@ const SRI_LANKA_CITIES = {
   hambantota: { lat: 6.1429, lng: 81.1212 },
 };
 
-// 2. HAVERSINE FORMULA (Calculate real distance between coordinates)
+// Standard Haversine formula for straight-line distance
 function calculateDistanceKm(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Radius of the earth in km
-  const dLat = deg2rad(lat2 - lat1);
-  const dLon = deg2rad(lon2 - lon1);
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(deg2rad(lat1)) *
-      Math.cos(deg2rad(lat2)) *
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
+
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const d = R * c; // Distance in km
-  return Math.round(d * 10) / 10; // Round to 1 decimal
+  return Math.round(R * c * 10) / 10;
 }
 
-function deg2rad(deg) {
-  return deg * (Math.PI / 180);
+// Fetch real weather data
+async function getRealWeather(lat, lng) {
+  try {
+    if (!lat || !lng) throw new Error("Missing coordinates");
+
+    const apiKey = process.env.OPENWEATHER_API_KEY;
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`;
+
+    const response = await axios.get(url);
+    const data = response.data;
+
+    // Check for rain codes (2xx, 3xx, 5xx)
+    const conditionId = data.weather[0].id;
+    const isRaining = conditionId >= 200 && conditionId < 600;
+
+    return {
+      temp_c: data.main.temp,
+      raining: isRaining,
+      condition: data.weather[0].main,
+    };
+  } catch (error) {
+    console.error("[Weather API Error]", error.message);
+    // Fallback to average SL conditions if API fails
+    return { temp_c: 30, raining: false, condition: "Unknown" };
+  }
 }
 
-// 3. MOCK WEATHER API
-// Returns realistic weather based on "Month" logic or Random
-async function getMockWeather(dateString, locationName) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // Mock Logic:
-      // Nuwara Eliya is cold.
-      // Dambulla/Colombo are hot.
-      const loc = locationName.toLowerCase();
-      let baseTemp = 30; // Default SL hot temp
-
-      if (loc.includes("nuwara")) baseTemp = 18;
-      else if (loc.includes("kandy")) baseTemp = 25;
-
-      // Random variance +/- 3 degrees
-      const currentTemp = baseTemp + Math.floor(Math.random() * 6) - 3;
-
-      // Random Rain (30% chance)
-      const isRaining = Math.random() < 0.3;
-
-      resolve({
-        temp_c: currentTemp,
-        raining: isRaining,
-        condition: isRaining ? "Rainy" : "Sunny",
-      });
-    }, 500); // 500ms API delay
-  });
-}
-
-module.exports = { SRI_LANKA_CITIES, calculateDistanceKm, getMockWeather };
+module.exports = { SRI_LANKA_CITIES, calculateDistanceKm, getRealWeather };

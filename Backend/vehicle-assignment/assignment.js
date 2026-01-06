@@ -1,7 +1,3 @@
-// ==========================================
-// 1. MOCK DATA & CONFIGURATION
-// ==========================================
-
 // Product Specifications (Constraints)
 const PRODUCT_SPECS = {
   MANGO_TJC: {
