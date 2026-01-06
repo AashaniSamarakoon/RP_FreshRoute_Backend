@@ -54,6 +54,66 @@ async function getLatestPricesFallback(capturedAt, source = "live") {
   return rows;
 }
 
+// Parse price string to min/max/avg
+function parsePriceRange(priceStr) {
+  if (!priceStr) return null;
+  const cleanPriceStr = priceStr.replace(/[^\d.\-\s]/g, "").trim();
+
+  if (cleanPriceStr.includes("-")) {
+    const parts = cleanPriceStr.split("-").map(p => parseFloat(p.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      const minPrice = Math.min(parts[0], parts[1]);
+      const maxPrice = Math.max(parts[0], parts[1]);
+      return { minPrice, maxPrice, avgPrice: (minPrice + maxPrice) / 2 };
+    }
+  } else {
+    const price = parseFloat(cleanPriceStr);
+    if (!isNaN(price)) {
+      return { minPrice: price, maxPrice: price, avgPrice: price };
+    }
+  }
+  return null;
+}
+
+function buildPriceRecord({ fruitNameRaw, varietyRaw, priceStr, unitRaw }) {
+  const fruitName = Object.entries(FRUIT_MAPPING).find(([key]) =>
+    (fruitNameRaw || "").toLowerCase().includes(key)
+  )?.[1];
+
+  const parsed = parsePriceRange(priceStr);
+  if (!fruitName || !parsed) return null;
+
+  const { minPrice, maxPrice } = parsed;
+
+  return {
+    economic_center: ECONOMIC_CENTER,
+    fruit_name: fruitName,
+    variety: varietyRaw || null,
+    min_price: minPrice,
+    max_price: maxPrice,
+    unit: unitRaw || "kg",
+    currency: "LKR",
+    source_url: DAMBULLA_URL,
+    captured_at: new Date().toISOString(),
+  };
+}
+
+async function scrapeDambullaWithPuppeteer() {
+  const puppeteer = require("puppeteer");
+  const browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  const page = await browser.newPage();
+  await page.goto(DAMBULLA_URL, { waitUntil: "networkidle2", timeout: 30000 });
+  await page.waitForSelector("table", { timeout: 15000 });
+
+  const rows = await page.$$eval("table tbody tr, table tr", trs => trs.map(tr => {
+    const cells = Array.from(tr.querySelectorAll("td")).map(td => td.innerText.trim());
+    return cells;
+  }));
+
+  await browser.close();
+  return rows.filter(r => r && r.length >= 3);
+}
+
 // Map fruit names from website to our DB
 const FRUIT_MAPPING = {
   mango: "Mango",
@@ -62,107 +122,43 @@ const FRUIT_MAPPING = {
 };
 
 /**
- * Scrape Dambulla prices from their website
- * Note: Website is React-based, so we attempt both direct fetch and API endpoints
+ * Scrape Dambulla prices using headless Puppeteer
+ * Renders the React SPA, waits for table, extracts prices
  */
 async function scrapeDambulla() {
   try {
-    console.log(`[Dambulla Scraper] Starting scrape attempt...`);
-    
-    // Try fetching the page with JavaScript rendering (uses headless browser simulation)
-    const res = await fetch(DAMBULLA_URL, { 
-      timeout: 15000,
-      headers: { 
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-      }
-    });
+    console.log(`[Dambulla Scraper] Starting headless scrape with Puppeteer...`);
+    const rawRows = await scrapeDambullaWithPuppeteer();
 
-    if (!res.ok) {
-      console.warn(`[Dambulla Scraper] HTTP ${res.status}: ${res.statusText}`);
-      console.log(`[Dambulla Scraper] Note: Website is React-based (SPA). Use manual price insertion script.`);
+    if (!rawRows || rawRows.length === 0) {
+      console.warn("[Dambulla Scraper] No rows found in table.");
       return [];
     }
 
-    const html = await res.text();
-    
-    // Check if we got actual content or a SPA shell
-    if (!html.includes('price') && !html.includes('table') && html.length < 5000) {
-      console.warn("[Dambulla Scraper] Received SPA shell, not rendered HTML.");
-      console.log("[Dambulla Scraper] To use live data, deploy scraper with headless browser (Puppeteer/Playwright)");
-      console.log("[Dambulla Scraper] For now, use: node scripts/insert-prices.js");
-      return [];
-    }
-
-    // Try to parse table if we got content
-    const cheerio = require("cheerio");
-    const $ = cheerio.load(html);
     const rows = [];
+    for (const cells of rawRows) {
+      if (cells.length < 3) continue;
 
-    // Look for price data in various formats
-    $("table tbody tr, table tr").each((_, tr) => {
-      const tds = $(tr).find("td");
-      if (tds.length < 3) return;
+      const fruitNameRaw = (cells[0] || "").toLowerCase();
+      const varietyRaw = cells[1] || "";
+      const priceStr = cells[2] || "";
+      const unitRaw = cells.length > 3 ? cells[3] : "kg";
 
-      try {
-        const fruitNameRaw = $(tds[0]).text().trim().toLowerCase();
-        const varietyRaw = $(tds[1]).text().trim();
-        const priceStr = $(tds[2]).text().trim();
-        const unitRaw = tds.length > 3 ? $(tds[3]).text().trim() : "kg";
-
-        // Parse price range (e.g., "100-150", "100 - 150", "Rs. 100-150")
-        let minPrice, maxPrice, avgPrice;
-        
-        // Remove currency symbols and extract numbers
-        const cleanPriceStr = priceStr.replace(/[^\d.\-\s]/g, "").trim();
-        
-        // Check if it's a range (contains dash)
-        if (cleanPriceStr.includes("-")) {
-          const parts = cleanPriceStr.split("-").map(p => parseFloat(p.trim()));
-          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-            minPrice = Math.min(parts[0], parts[1]);
-            maxPrice = Math.max(parts[0], parts[1]);
-            avgPrice = (minPrice + maxPrice) / 2;
-          }
-        } else {
-          // Single price
-          const price = parseFloat(cleanPriceStr);
-          if (!isNaN(price)) {
-            minPrice = maxPrice = avgPrice = price;
-          }
-        }
-
-        const fruitName = Object.entries(FRUIT_MAPPING).find(([key]) =>
-          fruitNameRaw.includes(key)
-        )?.[1];
-
-        if (!fruitName || avgPrice === undefined || Number.isNaN(avgPrice)) {
-          return;
-        }
-
-        rows.push({
-          economic_center: ECONOMIC_CENTER,
-          fruit_name: fruitName,
-          variety: varietyRaw || null,
-          min_price: minPrice,
-          max_price: maxPrice,
-          unit: unitRaw || "kg",
-          currency: "LKR",
-          source_url: DAMBULLA_URL,
-          captured_at: new Date().toISOString(),
-        });
-
+      const record = buildPriceRecord({ fruitNameRaw, varietyRaw, priceStr, unitRaw });
+      if (record) {
+        const parsed = parsePriceRange(priceStr);
+        const { minPrice, maxPrice } = parsed;
+        const avgPrice = (minPrice + maxPrice) / 2;
         const priceDisplay = minPrice === maxPrice 
           ? `Rs.${avgPrice}` 
-          : `Rs.${minPrice}-${maxPrice} (avg: ${avgPrice})`;
-        console.log(`[Dambulla] Parsed: ${fruitName} @ ${priceDisplay}/${unitRaw || 'kg'}`);
-      } catch (e) {
-        // silently skip parsing errors
+          : `Rs.${minPrice}-${maxPrice}`;
+        console.log(`[Dambulla] Parsed: ${record.fruit_name} @ ${priceDisplay}/${unitRaw}`);
+        rows.push(record);
       }
-    });
+    }
 
     if (rows.length === 0) {
-      console.warn("[Dambulla] No rows parsed. Website may be SPA-rendered only.");
+      console.warn("[Dambulla] No valid rows parsed from Puppeteer output.");
     }
 
     return rows;
