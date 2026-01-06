@@ -25,6 +25,7 @@ const multer = require("multer");
 const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
 const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
 const gradingRoutes = require("./routes/transporter/gradingRoutes");
+const buyerGradingRoutes = require("./routes/buyer/gradingRoutes");
 
 const app = express();
 app.use(cors());
@@ -66,6 +67,14 @@ app.use(
   authMiddleware,
   requireRole("buyer"),
   orderRoutes
+);
+
+// Buyer grading routes (get grading images)
+app.use(
+  "/api/buyer/gradings",
+  authMiddleware,
+  requireRole("buyer"),
+  buyerGradingRoutes
 );
 
 // Auth routes
