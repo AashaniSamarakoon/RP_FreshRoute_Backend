@@ -1,7 +1,9 @@
 const bcrypt = require("bcryptjs");
 const { supabase } = require("../../utils/supabaseClient");
 const { generateToken } = require("../../Services/auth");
-const { registerAndEnrollUser } = require("../../Services/blockchain/identityService");
+const {
+  registerAndEnrollUser,
+} = require("../../Services/blockchain/identityService");
 const { getContract } = require("../../Services/blockchain/contractService"); // Import the gateway bridge
 
 // Signup
@@ -49,67 +51,85 @@ const signup = async (req, res) => {
     const user = insertedUsers[0];
 
     // 4. Create role-specific entry in DB
-    let roleTable = role === "farmer" ? "farmer" : role === "buyer" ? "buyers" : "transporter";
+    let roleTable =
+      role === "farmer"
+        ? "farmer"
+        : role === "buyer"
+        ? "buyers"
+        : "transporter";
     const { error: roleError } = await supabase
       .from(roleTable)
       .insert({ user_id: user.id });
 
     if (roleError) {
       await supabase.from("users").delete().eq("id", user.id);
-      return res.status(500).json({ message: `Failed to create ${role} entry` });
+      return res
+        .status(500)
+        .json({ message: `Failed to create ${role} entry` });
     }
 
     // ==========================================
     // 5. BLOCKCHAIN IDENTITY (Fabric CA)
     // ==========================================
     console.log(`Registering ${role} on blockchain CA...`);
-    const identitySuccess = await registerAndEnrollUser(user.id, role);
     let ledgerStatus = "Pending";
+    let identitySuccess = false;
 
-    if (!identitySuccess) {
-      console.error("CRITICAL: Supabase user created but Blockchain identity failed.");
-      ledgerStatus = "Identity Failed";
-    } else {
-        // ==========================================
-        // 6. BLOCKCHAIN LEDGER (CouchDB Profile)
-        // ==========================================
+    try {
+      identitySuccess = await registerAndEnrollUser(user.id, role);
+      if (!identitySuccess) {
+        console.error(
+          "CRITICAL: Supabase user created but Blockchain identity failed."
+        );
+        ledgerStatus = "Identity Failed";
+      }
+    } catch (blockchainError) {
+      console.error(
+        "⚠️ Blockchain service unavailable:",
+        blockchainError.message
+      );
+      console.log(
+        "ℹ️ User created in Supabase. Blockchain registration skipped."
+      );
+      ledgerStatus = "Blockchain Service Unavailable";
+    }
+
+    if (identitySuccess) {
+      // ==========================================
+      // 6. BLOCKCHAIN LEDGER (CouchDB Profile)
+      // ==========================================
+      try {
+        console.log(
+          "Connecting to Gateway to register participant on Ledger..."
+        );
+
+        // Connect to the 'UserContract' specifically using the new user's credentials
+        const { contract, close } = await getContract(user.id, "UserContract");
+
         try {
-            console.log("Connecting to Gateway to register participant on Ledger...");
-            
-            // Connect to the 'UserContract' specifically using the new user's credentials
-            const { contract, close } = await getContract(user.id, 'UserContract');
-
-            try {
-                // Call RegisterParticipant(id, name, role)
-                await contract.submitTransaction(
-                    'RegisterUser', 
-                    user.id, 
-                    name, 
-                    role
-                );
-                console.log("Successfully registered participant on CouchDB Ledger.");
-                ledgerStatus = "Registered on Ledger";
-            } catch (txError) {
-                console.error("Ledger Transaction Failed:", txError);
-                ledgerStatus = "Identity Created, Ledger Failed";
-            } finally {
-                close(); // Always close the gateway connection
-            }
-
-        } catch (gatewayError) {
-            console.error("Gateway Connection Failed:", gatewayError);
-            ledgerStatus = "Gateway Error";
+          // Call RegisterParticipant(id, name, role)
+          await contract.submitTransaction("RegisterUser", user.id, name, role);
+          console.log("Successfully registered participant on CouchDB Ledger.");
+          ledgerStatus = "Registered on Ledger";
+        } catch (txError) {
+          console.error("Ledger Transaction Failed:", txError);
+          ledgerStatus = "Identity Created, Ledger Failed";
+        } finally {
+          close(); // Always close the gateway connection
         }
+      } catch (gatewayError) {
+        console.error("Gateway Connection Failed:", gatewayError);
+        ledgerStatus = "Gateway Error";
+      }
     }
 
     const token = generateToken(user);
-    
-    res.status(201).json({ 
-      token, 
-      user, 
-      blockchainStatus: ledgerStatus 
-    });
 
+    res.status(201).json({
+      token,
+      user,
+      blockchainStatus: ledgerStatus,
+    });
   } catch (err) {
     console.error("Signup error:", err);
     res.status(500).json({ message: "Server error" });
@@ -146,7 +166,6 @@ const login = async (req, res) => {
     // 3. Generate token
     const token = generateToken(user);
     res.json({ token, user });
-
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Server error" });
