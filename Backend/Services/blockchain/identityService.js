@@ -34,7 +34,7 @@ async function registerAndEnrollUser(userId, role) {
     // 3. Get the admin for the specific Org to authorize registration
     const adminId = `admin.${config.mspId}`;
     console.log(
-      `[Blockchain] Looking for admin identity: ${adminId} in wallet`
+      `[Blockchain] Looking for admin identity: ${adminId} in wallet at ${walletPath}`
     );
     const adminIdentity = await wallet.get(adminId);
     if (!adminIdentity) {
@@ -42,13 +42,36 @@ async function registerAndEnrollUser(userId, role) {
         `Admin identity '${adminId}' not found in wallet. Run enrollAdmin.js first. Wallet path: ${walletPath}`
       );
     }
-    console.log(`[Blockchain] Found admin identity for ${adminId}`);
+    console.log(`[Blockchain] Found admin identity for ${adminId}`, {
+      type: adminIdentity.type,
+      mspId: adminIdentity.mspId,
+    });
 
+    // Validate admin identity structure
+    if (
+      !adminIdentity.credentials ||
+      !adminIdentity.credentials.certificate ||
+      !adminIdentity.credentials.privateKey
+    ) {
+      throw new Error(
+        `Admin identity '${adminId}' is incomplete. Missing credentials. Try running enrollAdmin.js again.`
+      );
+    }
+
+    console.log(`[Blockchain] Attempting to create admin user context...`);
     const provider = wallet
       .getProviderRegistry()
       .getProvider(adminIdentity.type);
     const adminUser = await provider.getUserContext(adminIdentity, adminId);
-    console.log(`[Blockchain] Admin user context created for ${adminId}`);
+
+    if (!adminUser) {
+      throw new Error(
+        `Failed to create user context for admin ${adminId}. Wallet identity may be corrupted.`
+      );
+    }
+    console.log(
+      `[Blockchain] Admin user context created successfully for ${adminId}`
+    );
 
     // 4. Register the user with ABAC attributes for your smart contracts
     // This 'role' attribute is what your chaincode uses to verify permissions.
