@@ -98,11 +98,9 @@ const selectFarmer = async (req, res) => {
 
     // 1. Validate inputs
     if (!orderId || !stockId || !farmerId) {
-      return res
-        .status(400)
-        .json({
-          message: "Missing required fields: orderId, stockId, farmerId",
-        });
+      return res.status(400).json({
+        message: "Missing required fields: orderId, stockId, farmerId",
+      });
     }
 
     // 2. Get buyer ID
@@ -131,11 +129,9 @@ const selectFarmer = async (req, res) => {
     }
 
     if (order.status !== "OPEN" && order.status !== "MATCHED") {
-      return res
-        .status(400)
-        .json({
-          message: `Cannot select farmer for order with status: ${order.status}`,
-        });
+      return res.status(400).json({
+        message: `Cannot select farmer for order with status: ${order.status}`,
+      });
     }
 
     // 4. Verify stock exists and has enough quantity
@@ -167,7 +163,7 @@ const selectFarmer = async (req, res) => {
           farmer_id: farmerId,
           buyer_id: buyerData.id,
           quantity_proposed: qty,
-          status: "PENDING_FARMER",
+          status: "PENDING_BUYER", // Initial status - buyer needs to approve
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours to respond
         },
       ])
@@ -182,7 +178,7 @@ const selectFarmer = async (req, res) => {
     await supabase
       .from("placed_orders")
       .update({
-        status: "PENDING_FARMER",
+        status: "PENDING_BUYER", // Proposal created, waiting for buyer approval
         updated_at: new Date().toISOString(),
       })
       .eq("id", orderId);
@@ -309,4 +305,89 @@ const confirmMatch = async (req, res) => {
   }
 };
 
-module.exports = { placeOrder, selectFarmer, getOrderMatches, confirmMatch };
+// GET: Get all orders for buyer
+const getMyOrders = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // Get buyer ID
+    const { data: buyerData, error: buyerError } = await supabase
+      .from("buyers")
+      .select("id")
+      .eq("user_id", userId)
+      .single();
+
+    if (buyerError || !buyerData) {
+      return res.status(404).json({ message: "Buyer profile not found" });
+    }
+
+    // Get all orders for this buyer
+    const { data: orders, error: ordersError } = await supabase
+      .from("placed_orders")
+      .select("*")
+      .eq("buyer_id", buyerData.id)
+      .order("created_at", { ascending: false });
+
+    if (ordersError) throw new Error(ordersError.message);
+
+    return res.status(200).json({
+      orders: orders || [],
+      totalOrders: orders ? orders.length : 0,
+    });
+  } catch (err) {
+    console.error("GetMyOrders Error:", err);
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
+  }
+};
+
+// GET: Get single order by ID
+const getOrderById = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { orderId } = req.params;
+
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // Get buyer ID
+    const { data: buyerData, error: buyerError } = await supabase
+      .from("buyers")
+      .select("id")
+      .eq("user_id", userId)
+      .single();
+
+    if (buyerError || !buyerData) {
+      return res.status(404).json({ message: "Buyer profile not found" });
+    }
+
+    // Get order
+    const { data: order, error: orderError } = await supabase
+      .from("placed_orders")
+      .select("*")
+      .eq("id", orderId)
+      .eq("buyer_id", buyerData.id)
+      .single();
+
+    if (orderError || !order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    return res.status(200).json({ order });
+  } catch (err) {
+    console.error("GetOrderById Error:", err);
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
+  }
+};
+
+module.exports = {
+  placeOrder,
+  selectFarmer,
+  getOrderMatches,
+  confirmMatch,
+  getMyOrders,
+  getOrderById,
+};

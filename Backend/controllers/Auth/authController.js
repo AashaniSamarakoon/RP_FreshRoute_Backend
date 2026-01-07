@@ -49,6 +49,7 @@ const signup = async (req, res) => {
     }
 
     const user = insertedUsers[0];
+    console.log(`[Signup] User created with ID: ${user.id}`);
 
     // 4. Create role-specific entry in DB
     let roleTable =
@@ -57,16 +58,35 @@ const signup = async (req, res) => {
         : role === "buyer"
         ? "buyers"
         : "transporter";
-    const { error: roleError } = await supabase
+
+    console.log(
+      `[Signup] 📝 Creating role entry in table: '${roleTable}' for user ${user.id} (role: '${role}')`
+    );
+    const { data: roleData, error: roleError } = await supabase
       .from(roleTable)
-      .insert({ user_id: user.id });
+      .insert({ user_id: user.id })
+      .select();
+
+    console.log(`[Signup] Response from ${roleTable} insert:`, {
+      inserted: roleData ? roleData.length : 0,
+      error: roleError ? roleError.message : "none",
+    });
 
     if (roleError) {
+      console.error(
+        `❌ [Signup] FAILED to insert into '${roleTable}': ${roleError.message}`
+      );
       await supabase.from("users").delete().eq("id", user.id);
       return res
         .status(500)
-        .json({ message: `Failed to create ${role} entry` });
+        .json({
+          message: `Failed to create ${role} entry`,
+          error: roleError.message,
+        });
     }
+    console.log(
+      `✅ [Signup] Successfully created ${role} entry in '${roleTable}'`
+    );
 
     // ==========================================
     // 5. BLOCKCHAIN IDENTITY (Fabric CA)

@@ -21,6 +21,24 @@ const getProposals = async (req, res) => {
     const userId = req.user.id;
     const farmerId = await getFarmerId(userId);
 
+    // First, get all stocks that belong to this farmer
+    const { data: farmerStocks, error: stockError } = await supabase
+      .from("estimated_stock")
+      .select("id")
+      .eq("farmer_id", farmerId);
+
+    if (stockError) throw new Error(stockError.message);
+
+    if (!farmerStocks || farmerStocks.length === 0) {
+      return res.status(200).json({
+        message: "Found 0 pending proposals",
+        proposals: [],
+      });
+    }
+
+    const stockIds = farmerStocks.map((stock) => stock.id);
+
+    // Now get proposals for these stocks
     const { data: proposals, error } = await supabase
       .from("match_proposals")
       .select(
@@ -38,18 +56,18 @@ const getProposals = async (req, res) => {
           grade,
           quantity,
           required_date,
-          delivery_location
-        ),
-        buyer:buyer_id (
-          id,
-          user:user_id (
-            name,
-            email
+          delivery_location,
+          buyer:buyer_id (
+            id,
+            user:user_id (
+              name,
+              email
+            )
           )
         )
       `
       )
-      .eq("farmer_id", farmerId)
+      .in("stock_id", stockIds)
       .eq("status", "PENDING_FARMER")
       .gte("expires_at", new Date().toISOString()) // Not expired
       .order("created_at", { ascending: false });
@@ -79,9 +97,8 @@ const acceptProposal = async (req, res) => {
     // 1. Get proposal and verify ownership
     const { data: proposal, error: proposalError } = await supabase
       .from("match_proposals")
-      .select("*, order:order_id(*)")
+      .select("*, order:order_id(*), stock:stock_id(farmer_id)")
       .eq("id", proposalId)
-      .eq("farmer_id", farmerId)
       .eq("status", "PENDING_FARMER")
       .single();
 
@@ -89,6 +106,13 @@ const acceptProposal = async (req, res) => {
       return res
         .status(404)
         .json({ message: "Proposal not found or already processed" });
+    }
+
+    // Verify the stock belongs to this farmer
+    if (proposal.stock.farmer_id !== farmerId) {
+      return res
+        .status(403)
+        .json({ message: "You don't have permission to accept this proposal" });
     }
 
     // Check if expired
@@ -200,9 +224,8 @@ const rejectProposal = async (req, res) => {
     // 1. Get proposal and verify ownership
     const { data: proposal, error: proposalError } = await supabase
       .from("match_proposals")
-      .select("id, order_id")
+      .select("id, order_id, stock:stock_id(farmer_id)")
       .eq("id", proposalId)
-      .eq("farmer_id", farmerId)
       .eq("status", "PENDING_FARMER")
       .single();
 
@@ -210,6 +233,13 @@ const rejectProposal = async (req, res) => {
       return res
         .status(404)
         .json({ message: "Proposal not found or already processed" });
+    }
+
+    // Verify the stock belongs to this farmer
+    if (proposal.stock.farmer_id !== farmerId) {
+      return res
+        .status(403)
+        .json({ message: "You don't have permission to reject this proposal" });
     }
 
     // 2. Update proposal status

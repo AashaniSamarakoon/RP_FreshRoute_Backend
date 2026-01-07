@@ -6,21 +6,38 @@ const cron = require("node-cron");
 const bcrypt = require("bcryptjs");
 
 const { supabase } = require("./utils/supabaseClient");
-const { authMiddleware, requireRole, generateToken } = require("./Services/auth");
+const {
+  authMiddleware,
+  requireRole,
+  generateToken,
+} = require("./Services/auth");
 const {
   runBatchMatching,
   markExpiredOrders,
 } = require("./Services/matchingService");
-const { startSMSScheduler, triggerSMSNow } = require("./Services/farmer/smsScheduler");
-const { startDambullaScheduler } = require("./Services/farmer/dambullaScheduler");
-const { initializeTodaysPrices, updateFreshRoutePrices } = require("./Services/farmer/freshRoutePriceUpdater");
-const { getFreshRoutePrices } = require("./routes/farmer/freshRoutePricesEndpoint");
-const { calculateAccuracyInsights } = require("./Services/farmer/accuracyInsights");
+const {
+  startSMSScheduler,
+  triggerSMSNow,
+} = require("./Services/farmer/smsScheduler");
+const {
+  startDambullaScheduler,
+} = require("./Services/farmer/dambullaScheduler");
+const {
+  initializeTodaysPrices,
+  updateFreshRoutePrices,
+} = require("./Services/farmer/freshRoutePriceUpdater");
+const {
+  getFreshRoutePrices,
+} = require("./routes/farmer/freshRoutePricesEndpoint");
+const {
+  calculateAccuracyInsights,
+} = require("./Services/farmer/accuracyInsights");
 const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
 const fruitsRoutes = require("./routes/common/fruitsRoutes");
 const predictStockRoutes = require("./routes/farmer/predictStockRoutes");
 const orderRoutes = require("./routes/buyer/orderRoutes");
+const matchingRoutes = require("./routes/buyer/matchingRoutes");
 const farmerDashboardRoutes = require("./routes/farmer/dashboardRoutes");
 const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes");
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
@@ -37,17 +54,21 @@ app.use(express.json());
 app.use((req, res, next) => {
   const startTime = Date.now();
   const originalJson = res.json;
-  res.json = function(data) {
+  res.json = function (data) {
     const duration = Date.now() - startTime;
     const isError = res.statusCode >= 400;
-    const icon = isError ? '❌' : '✅';
-    console.log(`${icon} [${new Date().toISOString()}] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
-    if (isError || req.path.includes('forecast')) {
+    const icon = isError ? "❌" : "✅";
+    console.log(
+      `${icon} [${new Date().toISOString()}] ${req.method} ${req.path} - ${
+        res.statusCode
+      } (${duration}ms)`
+    );
+    if (isError || req.path.includes("forecast")) {
       console.log(`   Data: ${JSON.stringify(data).substring(0, 100)}`);
     }
     return originalJson.call(this, data);
   };
-  
+
   next();
 });
 
@@ -60,10 +81,22 @@ app.get("/health", (req, res) => {
 // Frontend calls /forecast/7day instead of /api/farmer/forecast/7day
 app.use((req, res, next) => {
   // Check if this looks like a farmer API call but missing /api/farmer prefix
-  const forecastRoutes = ['/forecast', '/forecast/7day', '/forecast/fruit', '/live-market', '/prices', '/notifications', '/dashboard', '/home', '/accuracy'];
-  const isFarmerRoute = forecastRoutes.some(route => req.path.startsWith(route));
-  
-  if (isFarmerRoute && !req.path.startsWith('/api/')) {
+  const forecastRoutes = [
+    "/forecast",
+    "/forecast/7day",
+    "/forecast/fruit",
+    "/live-market",
+    "/prices",
+    "/notifications",
+    "/dashboard",
+    "/home",
+    "/accuracy",
+  ];
+  const isFarmerRoute = forecastRoutes.some((route) =>
+    req.path.startsWith(route)
+  );
+
+  if (isFarmerRoute && !req.path.startsWith("/api/")) {
     // Redirect the request to /api/farmer + path
     req.url = `/api/farmer${req.url}`;
     req.path = `/api/farmer${req.path}`;
@@ -80,12 +113,7 @@ app.use(
 );
 
 // Farmer routes (forecast, notifications, SMS, etc.)
-app.use(
-  "/api/farmer",
-  authMiddleware,
-  requireRole("farmer"),
-  farmerRoutes
-);
+app.use("/api/farmer", authMiddleware, requireRole("farmer"), farmerRoutes);
 
 // Fruit properties (GET id, fruit_name, variant)
 app.use("/api/fruit-properties", authMiddleware, fruitsRoutes);
@@ -109,6 +137,9 @@ app.use(
   orderRoutes
 );
 
+// Buyer matching (view/trigger proposals from matching algorithm)
+app.use("/api/buyer/matching", matchingRoutes);
+
 // Buyer FreshRoute prices (same payload as farmer)
 app.get(
   "/api/buyer/prices/freshroute",
@@ -125,7 +156,12 @@ app.use("/api/trust", trustRoutes);
 app.use("/api/alerts", alertRoutes);
 
 // Accuracy insights routes (forecast accuracy analysis)
-app.use("/api/farmer/accuracy", authMiddleware, requireRole("farmer"), accuracyRoutes);
+app.use(
+  "/api/farmer/accuracy",
+  authMiddleware,
+  requireRole("farmer"),
+  accuracyRoutes
+);
 
 // Dashboard routes
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
@@ -254,15 +290,17 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
 
 // 404 handler - returns JSON instead of HTML
 app.use((req, res) => {
-  res.status(404).json({ message: `Route ${req.method} ${req.path} not found` });
+  res
+    .status(404)
+    .json({ message: `Route ${req.method} ${req.path} not found` });
 });
 
 // Error handler middleware - ensures all errors return JSON
 app.use((err, req, res, next) => {
-  console.error('Global error handler:', err);
+  console.error("Global error handler:", err);
   res.status(err.status || 500).json({
-    message: err.message || 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    message: err.message || "Internal server error",
+    error: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
 });
 
@@ -303,7 +341,6 @@ process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
   process.exit(1);
 });
-
 
 // ---------- SCHEDULED JOBS ----------
 // Run batch matching every 2 hours (at minute 0)

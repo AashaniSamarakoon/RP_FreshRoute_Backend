@@ -5,7 +5,19 @@ const {
   selectFarmer,
   getOrderMatches,
   confirmMatch,
+  getMyOrders,
+  getOrderById,
 } = require("../../controllers/buyer/orderController");
+
+// @route   GET /
+// @desc    Get all orders for buyer
+// @access  Private
+router.get("/", getMyOrders);
+
+// @route   GET /:orderId
+// @desc    Get single order by ID
+// @access  Private
+router.get("/:orderId", getOrderById);
 
 // @route   POST /
 // @desc    Place a new order
