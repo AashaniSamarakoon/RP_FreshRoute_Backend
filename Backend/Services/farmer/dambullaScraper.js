@@ -189,28 +189,28 @@ async function importDambullaPrices() {
     let rows = await scrapeDambulla();
 
     if (!rows || rows.length === 0) {
-      console.warn("[Dambulla Import] No scraped rows. Using yesterday's prices as today's fallback.");
+      console.warn("[Dambulla Import] No scraped rows. Checking for yesterday's prices...");
       
       // Get yesterday's date
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayDateStr = yesterday.toISOString().split("T")[0];
       
-      // Try to get yesterday's prices first
-      const { data: yesterdayPrices, error: yesterdayError } = await supabase
-        .from("economic_center_prices")
-        .select("fruit_id, fruit_name, variety, min_price, max_price, unit, currency")
-        .eq("economic_center", ECONOMIC_CENTER)
-        .gte("captured_at", yesterdayDateStr)
-        .lt("captured_at", capturedAt.split("T")[0])
-        .order("captured_at", { ascending: false });
+      // First try historical_market_prices table for yesterday's data
+      console.log(`[Dambulla Import] Checking historical_market_prices for ${yesterdayDateStr}...`);
+      const { data: historicalPrices, error: historicalError } = await supabase
+        .from("historical_market_prices")
+        .select("fruit_id, fruit_name, min_price, max_price")
+        .gte("date", yesterdayDateStr)
+        .lt("date", capturedAt.split("T")[0])
+        .order("date", { ascending: false });
       
-      if (!yesterdayError && yesterdayPrices && yesterdayPrices.length > 0) {
-        console.log(`[Dambulla Import] Using ${yesterdayPrices.length} prices from yesterday (${yesterdayDateStr})`);
+      if (!historicalError && historicalPrices && historicalPrices.length > 0) {
+        console.log(`[Dambulla Import] Found ${historicalPrices.length} prices in historical_market_prices from ${yesterdayDateStr}`);
         
         // Group by fruit and take latest
         const latestByFruit = new Map();
-        for (const row of yesterdayPrices) {
+        for (const row of historicalPrices) {
           if (!latestByFruit.has(row.fruit_name)) {
             latestByFruit.set(row.fruit_name, row);
           }
@@ -220,26 +220,64 @@ async function importDambullaPrices() {
           economic_center: ECONOMIC_CENTER,
           fruit_id: r.fruit_id,
           fruit_name: r.fruit_name,
-          variety: r.variety,
+          variety: null,
           min_price: r.min_price || 0,
           max_price: r.max_price || 0,
-          unit: r.unit,
-          currency: r.currency || "LKR",
-          source_url: `${DAMBULLA_URL} (yesterday's fallback)`,
+          unit: "kg",
+          currency: "LKR",
+          source_url: `${DAMBULLA_URL} (yesterday from historical_market_prices)`,
           captured_at: capturedAt,
         }));
+        
+        usedFallback = true;
       } else {
-        // If no yesterday prices, fall back to latest available
-        console.warn("[Dambulla Import] No yesterday prices found. Using latest available prices.");
-        rows = await getLatestPricesFallback(capturedAt, "live");
+        // If no historical prices, try economic_center_prices for yesterday
+        console.log(`[Dambulla Import] Checking economic_center_prices for ${yesterdayDateStr}...`);
+        const { data: yesterdayPrices, error: yesterdayError } = await supabase
+          .from("economic_center_prices")
+          .select("fruit_id, fruit_name, variety, min_price, max_price, unit, currency")
+          .eq("economic_center", ECONOMIC_CENTER)
+          .gte("captured_at", yesterdayDateStr)
+          .lt("captured_at", capturedAt.split("T")[0])
+          .order("captured_at", { ascending: false });
+        
+        if (!yesterdayError && yesterdayPrices && yesterdayPrices.length > 0) {
+          console.log(`[Dambulla Import] Found ${yesterdayPrices.length} prices from economic_center_prices (${yesterdayDateStr})`);
+          
+          // Group by fruit and take latest
+          const latestByFruit = new Map();
+          for (const row of yesterdayPrices) {
+            if (!latestByFruit.has(row.fruit_name)) {
+              latestByFruit.set(row.fruit_name, row);
+            }
+          }
+          
+          rows = Array.from(latestByFruit.values()).map(r => ({
+            economic_center: ECONOMIC_CENTER,
+            fruit_id: r.fruit_id,
+            fruit_name: r.fruit_name,
+            variety: r.variety,
+            min_price: r.min_price || 0,
+            max_price: r.max_price || 0,
+            unit: r.unit,
+            currency: r.currency || "LKR",
+            source_url: `${DAMBULLA_URL} (yesterday from economic_center_prices)`,
+            captured_at: capturedAt,
+          }));
+          
+          usedFallback = true;
+        } else {
+          // If no yesterday prices, fall back to latest available
+          console.warn("[Dambulla Import] No yesterday prices found. Using latest available prices.");
+          rows = await getLatestPricesFallback(capturedAt, "live");
+          usedFallback = true;
+        }
       }
-      
-      usedFallback = true;
     }
 
-    // If live fallback empty, try historical prices
+    // If all fallbacks empty, try historical prices (any date)
     if (!rows || rows.length === 0) {
-      console.warn("[Dambulla Import] No live prices. Using historical prices as fallback.");
+      console.warn("[Dambulla Import] No yesterday prices. Using latest historical prices as fallback.");
       rows = await getLatestPricesFallback(capturedAt, "historical");
       usedFallback = true;
     }
