@@ -57,7 +57,15 @@ async function getNotifications(req, res) {
 async function getNotificationById(req, res) {
   try {
     const userId = req.user.id;
-    const { id } = req.params;
+    const id = req.params.id || req.params.notificationId;
+
+    if (!id) {
+      return res.status(400).json({ error: "Notification id is required" });
+    }
+
+    if (!id) {
+      return res.status(400).json({ error: "Notification id is required" });
+    }
 
     const { data, error } = await supabase
       .from("notifications")
@@ -85,7 +93,15 @@ async function getNotificationById(req, res) {
 async function markAsRead(req, res) {
   try {
     const userId = req.user.id;
-    const { id } = req.params;
+    const id = req.params.id || req.params.notificationId;
+
+    if (!id) {
+      return res.status(400).json({ error: "Notification id is required" });
+    }
+
+    if (!id) {
+      return res.status(400).json({ error: "Notification id is required" });
+    }
 
     // Verify notification belongs to user
     const { data: notification, error: fetchError } = await supabase
@@ -144,7 +160,11 @@ async function markAllAsRead(req, res) {
 async function deleteNotification(req, res) {
   try {
     const userId = req.user.id;
-    const { id } = req.params;
+    const id = req.params.id || req.params.notificationId;
+
+    if (!id) {
+      return res.status(400).json({ error: "Notification id is required" });
+    }
 
     // Verify notification belongs to user
     const { data: notification, error: fetchError } = await supabase

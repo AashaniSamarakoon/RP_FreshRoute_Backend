@@ -168,10 +168,41 @@ async function logSMSSend(farmer_id, phone, status, error_msg = null) {
   }
 }
 
+/**
+ * Check if forecast SMS was already sent today
+ * @returns {Promise<boolean>} True if already sent today
+ */
+async function wasForecastSMSSentToday() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayStart = `${today}T00:00:00Z`;
+    const todayEnd = `${today}T23:59:59Z`;
+
+    const { data, error } = await supabase
+      .from("sms_logs")
+      .select("id")
+      .gte("sent_at", todayStart)
+      .lte("sent_at", todayEnd)
+      .eq("status", "sent")
+      .limit(1);
+
+    if (error) {
+      console.warn("⚠️ Error checking SMS logs:", error.message);
+      return false;
+    }
+
+    return data && data.length > 0;
+  } catch (err) {
+    console.warn("⚠️ Error checking if SMS sent today:", err.message);
+    return false;
+  }
+}
+
 module.exports = {
   buildForecastSMS,
   getFreshForecastsForSMS,
   getSMSSubscribedFarmers,
   compileSMSBatch,
   logSMSSend,
+  wasForecastSMSSentToday,
 };
