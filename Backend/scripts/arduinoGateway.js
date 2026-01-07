@@ -12,11 +12,11 @@ const BAUD_RATE = 9600;
 const port = new SerialPort({ path: SERIAL_PORT, baudRate: BAUD_RATE });
 const parser = port.pipe(new ReadlineParser({ delimiter: "\r\n" }));
 
-console.log(`🔌 Connecting to Arduino on ${SERIAL_PORT}...`);
+console.log(`Connecting to Arduino on ${SERIAL_PORT}...`);
 
 // 2. Listen for Data
 port.on("open", () => {
-  console.log("✅ Serial Port Opened");
+  console.log("Serial Port Opened");
 });
 
 parser.on("data", (line) => {
@@ -51,7 +51,7 @@ async function sendTelemetry(temp, humidity) {
     });
     process.stdout.write(" -> Uploaded \r"); // Little trick to keep console clean
   } catch (err) {
-    console.error(`❌ Upload Failed: ${err.message}`);
+    console.error(`Upload Failed: ${err.message}`);
   }
 }
 
