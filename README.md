@@ -1,6 +1,6 @@
-# FreshRoute - Decentralized Farm-to-Fork Supply Chain
+# FreshRoute - Next era of Sri Lankan Fruit Supply Chain
 
-FreshRoute is a comprehensive, blockchain-powered platform designed to revolutionize the agricultural supply chain. It directly connects farmers, buyers, and transporters in a transparent, efficient, and secure marketplace, ensuring fair prices, reducing spoilage, and providing end-to-end traceability of produce from the farm to the fork.
+FreshRoute is an intelligent, multi-faceted platform engineered to modernize the agricultural supply chain. It integrates **AI-powered forecasting**, **logistics optimization**, **AI-powered fruit quality assessment** and **blockchain technology** to connect farmers, buyers, and transporters in a transparent, efficient, and data-driven marketplace. The platform's goal is to reduce waste, ensure fair market prices, and provide unparalleled traceability from farm to fork.
 
 For detailed information about the backend services, APIs, and setup, please see the [Backend README](./Backend/README.md).
 
@@ -8,14 +8,20 @@ For detailed information about the Hyperledger Fabric network, chaincode, and se
 
 ## Major Updates & Breakthroughs
 
-This platform introduces several key innovations to the agricultural sector:
+FreshRoute is built on three core pillars: Artificial Intelligence, Logistics Optimization, and Blockchain.
 
-*   **Decentralized Traceability:** Leverages Hyperledger Fabric to create an immutable, transparent ledger for tracking produce through every stage of the supply chain.
-*   **Automated Order Matching:** A sophisticated algorithm connects farmer's stock with buyer's orders, optimizing logistics and ensuring freshness.
-*   **Dynamic Price Engine:** Integrates a real-time web scraper to fetch daily market prices, powering a dynamic pricing model and SMS alerts.
-*   **IoT-Enabled Logistics:** Designed for integration with IoT sensors to monitor and ensure produce quality during transit.
-*   **Role-Based, Secure Access:** A robust authentication system with distinct roles for Farmers, Buyers, and Transporters.
-*   **Predictive Analytics:** Includes services for analyzing the accuracy of stock and price forecasts to empower farmer decision-making.
+### 🧠 Artificial Intelligence & Data Analytics
+*   **AI-Powered Demand Forecasting:** The platform provides farmers with demand forecasts, helping them predict which crops will be most profitable. An `accuracyInsights` service continually analyzes the performance of these forecasts, creating a feedback loop for model improvement.
+*   **Data-Driven Quality Checks:** By integrating with IoT sensors on transport vehicles (`telemetryRoutes`), the platform gathers real-time data like temperature and humidity. This data is crucial for monitoring produce quality during transit and can be used to train models to predict and prevent spoilage.
+
+### 🚚 Advanced Logistics Optimization
+*   **Optimized Routing:** A sophisticated route optimizer (`routeOptimizer.js`) uses a greedy nearest-neighbor algorithm to calculate the most efficient sequence of pickups and drop-offs for transporters. This minimizes fuel consumption, reduces delivery times, and lowers costs.
+*   **Automated Order Matching:** A core algorithm automatically matches farmer's available stock with buyer's orders, streamlining the procurement process and ensuring the freshest possible produce is routed efficiently.
+
+### 🔗 Blockchain-Grade Trust & Transparency
+*   **Decentralized Traceability:** Leverages Hyperledger Fabric to create an immutable, auditable ledger. Every key event, from order placement to final delivery, can be recorded to enhance food safety and build trust among all parties.
+*   **Secure & Role-Based Access:** A robust authentication system with distinct roles for Farmers, Buyers, and Transporters ensures data integrity and privacy across the platform.
+
 
 ## Architectural Diagram
 
@@ -73,7 +79,8 @@ graph TD
 
 *   **Backend:** Node.js, Express.js, PostgreSQL (Supabase)
 *   **Blockchain:** Hyperledger Fabric
-*   **Key Services:** Twilio, Puppeteer for web scraping, `serialport` for IoT.
+*   **AI & Optimization:** Custom algorithms, Puppeteer for data scraping.
+*   **Key Services:** Twilio, `serialport` for IoT.
 
 ## Repository Structure
 
