@@ -1,101 +1,121 @@
 # FreshRoute Backend
 
-This directory contains the Node.js backend for the FreshRoute platform. It serves as the central API, handling business logic, user authentication, database interactions, and communication with the Hyperledger Fabric blockchain.
+Welcome to the FreshRoute Backend. This Node.js application is the central nervous system of the platform, responsible for handling all business logic, data processing, and communication between users, the database, and the Hyperledger Fabric blockchain.
 
-## Features
+## 1. Core Functionality
 
-*   **RESTful API:** A comprehensive API for all platform functionalities, with role-based access control for Farmers, Buyers, and Transporters.
-*   **Authentication:** Uses JWT for secure, stateless authentication.
-*   **Scheduled Tasks:** `node-cron` is used for running critical background jobs:
-    *   **Order Matching:** Periodically matches available produce with buy orders.
-    *   **Price Updates:** Daily scrapes market data to update the internal pricing engine.
-    *   **Notifications:** Sends out scheduled SMS alerts to users.
-*   **Blockchain Gateway:** The `Services/blockchain/contractService.js` acts as a gateway to the Hyperledger Fabric network, managing user identities and abstracting chaincode interactions.
-*   **Database:** Uses Supabase (PostgreSQL) for storing application data like user profiles, orders, and non-blockchain-related information.
+The backend is a multi-faceted service that performs several critical roles:
 
-## Getting Started
+#### API Server (Express.js)
+The core of the backend is a RESTful API built with Express.js. It provides structured, role-based endpoints for all frontend clients.
+- **Role-Based Access:** Routes are grouped by user role (`/api/farmer`, `/api/buyer`, `/api/transporter`).
+- **Authentication:** A custom middleware (`Services/auth.js`) checks for a valid JSON Web Token (JWT) on protected routes and verifies the user's role.
+- **Logging:** A middleware provides detailed logging for every incoming request, showing the method, path, status code, and response time.
+
+#### Scheduled Services (`node-cron`)
+Several automated tasks run on a schedule to keep the platform running smoothly:
+- **Batch Matching (`0 */2 * * *`):** Every two hours, the `matchingService` runs to find compatible buy and sell orders. It creates match proposals that are then sent to farmers for approval.
+- **Price Scraping & Updates (`0 6 * * *`):** The `dambullaScheduler` uses Puppeteer to scrape daily prices from external market websites. The `freshRoutePriceUpdater` then uses this data to update the platform's internal price benchmarks.
+- **SMS Notifications:** The `smsScheduler` uses Twilio to send out timely alerts, such as daily price forecasts to farmers.
+- **Data Maintenance (`0 0 * * *`):** A daily job marks old orders as expired.
+
+#### Blockchain Gateway
+The backend is the *only* part of the system that communicates directly with the Hyperledger Fabric network.
+- **`Services/blockchain/contractService.js`:** This file acts as a singleton gateway to the Fabric network. It handles the gRPC connection, loads the appropriate user identity from the `wallet/` directory, and invokes chaincode functions.
+- **Wallet Management:** For each user who needs to interact with the blockchain, a `.id` file is created in the `wallet/` directory. This file contains the user's certificate and private key, allowing the backend to sign transactions on their behalf.
+
+#### Data Management (Supabase/PostgreSQL)
+While the blockchain stores the final, immutable record of transfers and agreements, the backend uses a PostgreSQL database (via Supabase) for more dynamic, off-chain data. This includes:
+- User profiles and credentials.
+- Pending orders that have not yet been matched.
+- Cached market data and price forecasts.
+
+#### IoT & Telemetry
+The backend is equipped to handle data from IoT devices in the supply chain.
+- The `serialport` dependency allows for direct communication with hardware sensors.
+- The `/api/telemetry` and `/api/logistics` routes are designed to receive data like temperature, humidity, and GPS coordinates from transport vehicles, enabling real-time shipment monitoring.
+
+## 2. Setup and Installation (From Scratch)
+
+Follow these steps to get the backend server running locally.
 
 ### Prerequisites
+*   **Node.js:** v18 or higher is recommended.
+*   **Git:** For cloning the repository.
+*   **Running Blockchain Network:** The Hyperledger Fabric network must be running. See the `../Blockchain/README.md` for instructions.
+*   **Supabase Account or PostgreSQL DB:** You need a PostgreSQL connection string.
 
-*   Node.js (v18+ recommended)
-*   A running PostgreSQL instance (or a Supabase project).
-*   A configured `.env` file with credentials.
+### Step-by-Step Installation
 
-### Installation & Setup
+1.  **Navigate to this Directory:**
+    Make sure you are in the `Backend` directory.
 
-1.  **Install Dependencies:**
-    From the `Backend` directory, run:
+2.  **Install Dependencies:**
     ```bash
     npm install
     ```
+    This will install all packages listed in `package.json`.
 
-2.  **Environment Variables:**
-    Create a `.env` file in the `Backend` directory and populate it with the necessary credentials. See `.env.example` if available, or use the following template:
+3.  **Set Up Environment Variables:**
+    Create a file named `.env` in this directory. This file is crucial for storing secrets and configuration. Copy the following template and fill in the values.
 
     ```env
-    # Supabase/PostgreSQL
-    SUPABASE_URL=YOUR_SUPABASE_URL
-    SUPABASE_KEY=YOUR_SUPABASE_ANON_KEY
+    # --- Supabase / PostgreSQL Database ---
+    # Find these in your Supabase project settings
+    SUPABASE_URL=https://<your-project-ref>.supabase.co
+    SUPABASE_KEY=<your-supabase-anon-key>
 
-    # JWT
-    JWT_SECRET=a_strong_secret_for_signing_tokens
+    # --- JSON Web Token (JWT) ---
+    # Use a long, random, and secret string for security
+    JWT_SECRET=your_super_secret_jwt_string
 
-    # Twilio for SMS
-    TWILIO_ACCOUNT_SID=YOUR_TWILIO_SID
-    TWILIO_AUTH_TOKEN=YOUR_TWILIO_TOKEN
-    TWILIO_PHONE_NUMBER=YOUR_TWILIO_PHONE_NUMBER
+    # --- Twilio for SMS Notifications ---
+    # Find these in your Twilio account dashboard
+    TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    TWILIO_AUTH_TOKEN=your_twilio_auth_token
+    TWILIO_PHONE_NUMBER=+15551234567
 
-    # Server Port
+    # --- Server Configuration ---
+    # The port the backend server will run on
     PORT=4000
     ```
 
-3.  **Run the Server:**
-    *   For development with live-reloading:
-        ```bash
-        npm run dev
-        ```
-    *   For production:
-        ```bash
-        npm start
-        ```
+4.  **Run the Development Server:**
+    ```bash
+    npm run dev
+    ```
+    This command uses `nodemon` to start the server. It will automatically restart the server whenever you save a file, making development much faster. The server will be available at `http://localhost:4000`.
 
-## API Endpoints
+## 3. Project Structure
 
-The API is structured by user roles. All role-specific routes require a valid JWT.
+The backend code is organized into the following directories:
 
-*   `/api/auth`: User registration and login.
-*   `/api/farmer`: Endpoints for farmers (e.g., managing stock, viewing proposals).
-*   `/api/buyer`: Endpoints for buyers (e.g., placing orders, viewing matches).
-*   `/api/transporter`: Endpoints for transporters (e.g., managing logistics, viewing telemetry data).
-*   `/api/common`: Endpoints for common data (e.g., fruit lists).
+-   `controllers/`: Handles incoming HTTP requests, validates data, and sends responses. It acts as the bridge between routes and services.
+-   `routes/`: Defines all the API endpoints using Express Router. It maps URLs to specific controller functions.
+-   `Services/`: Contains the core business logic. This is where complex operations like order matching, blockchain communication, and notification scheduling live.
+-   `utils/`: Holds reusable utility functions and clients, such as the `supabaseClient.js` for database connections.
+-   `wallet/`: Stores the cryptographic identities (`.id` files) for users who interact with the blockchain. **This directory should be in your `.gitignore` and never committed to version control.**
+-   `index.js`: The main entry point for the application. It initializes the Express server, sets up middleware, defines routes, and starts the cron jobs.
 
-For a complete list of routes, please inspect the `index.js` and the files within the `routes/` directory.
+## 4. Dependencies
 
-## Dependencies
-
-This backend relies on the following packages:
-
-| Package | Version | Description |
-|---|---|---|
-| @grpc/grpc-js | ^1.14.3 | gRPC library for Node.js |
-| @hyperledger/fabric-gateway | ^1.10.0 | High-level API for Hyperledger Fabric |
-| @supabase/supabase-js | ^2.86.0 | Supabase client library |
-| bcryptjs | ^3.0.3 | Password hashing |
-| cors | ^2.8.5 | CORS middleware |
-| dotenv | ^17.2.3 | Loads environment variables from `.env` |
-| express | ^5.1.0 | Web framework |
-| fabric-ca-client | ^2.2.20 | Client for Fabric Certificate Authority |
-| fabric-network | ^2.2.20 | Legacy client for Hyperledger Fabric |
-| jsonwebtoken | ^9.0.2 | JSON Web Token implementation |
-| multer | ^2.0.2 | Middleware for file uploads |
-| node-cron | ^4.2.1 | Job scheduler |
-| node-fetch | ^3.3.2 | `window.fetch` for Node.js |
-| pg | ^8.16.3 | PostgreSQL client |
-| puppeteer | ^24.34.0 | Headless Chrome for web scraping |
-| serialport | ^13.0.0 | Access serial ports for IoT |
-| twilio | ^5.11.1 | Twilio API client for SMS |
-
-### Dev Dependencies
-| Package | Version | Description |
-|---|---|---|
-| nodemon | ^3.1.11 | Monitors for changes and restarts the server |
+| Package                       | Description                                |
+| ----------------------------- | ------------------------------------------ |
+| `@grpc/grpc-js`               | gRPC library for Node.js                   |
+| `@hyperledger/fabric-gateway` | High-level API for Hyperledger Fabric      |
+| `@supabase/supabase-js`       | Supabase client library                    |
+| `bcryptjs`                    | Password hashing                           |
+| `cors`                        | CORS middleware                            |
+| `dotenv`                      | Loads environment variables from `.env`    |
+| `express`                     | Web framework                              |
+| `fabric-ca-client`            | Client for Fabric Certificate Authority    |
+| `fabric-network`              | Legacy client for Hyperledger Fabric       |
+| `jsonwebtoken`                | JSON Web Token implementation              |
+| `multer`                      | Middleware for file uploads                |
+| `node-cron`                   | Job scheduler                              |
+| `node-fetch`                  | `window.fetch` for Node.js                 |
+| `pg`                          | PostgreSQL client                          |
+| `puppeteer`                   | Headless Chrome for web scraping           |
+| `serialport`                  | Access serial ports for IoT                |
+| `twilio`                      | Twilio API client for SMS                  |
+| `nodemon` (dev)               | Monitors for changes and restarts server   |
