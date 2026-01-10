@@ -44,6 +44,9 @@ const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 const farmerRoutes = require("./routes/farmer");
 const trustRoutes = require("./routes/common/trustRoutes");
+const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
+const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
+
 const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
 const app = express();
@@ -168,141 +171,19 @@ app.use("/api/farmer/dashboard", farmerDashboardRoutes);
 app.use("/api/transporter/dashboard", transporterDashboardRoutes);
 app.use("/api/buyer/dashboard", buyerDashboardRoutes);
 
-// ---------- AUTH INLINE (legacy supabase signup/login) ----------
-app.post("/api/auth/signup", async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
+app.use(
+  "/api/logistics",
+  // authMiddleware,
+  // requireRole("transporter"),
+  logisticsRoutes
+);
 
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ message: "Missing fields" });
-    }
-
-    const allowedRoles = ["farmer", "transporter", "buyer", "admin"];
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: "Invalid role" });
-    }
-
-    const { data: existingUsers, error: existingError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email);
-
-    if (existingError) {
-      console.error("Supabase select error:", existingError);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    if (existingUsers && existingUsers.length > 0) {
-      return res.status(409).json({ message: "Email already registered" });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const { data: insertedUsers, error: insertError } = await supabase
-      .from("users")
-      .insert({ name, email, password_hash: passwordHash, role })
-      .select("id, name, email, role");
-
-    if (insertError) {
-      console.error("Supabase insert error:", insertError);
-      return res.status(500).json({ message: "Failed to create user" });
-    }
-
-    const user = insertedUsers[0];
-    const token = generateToken(user);
-    res.status(201).json({ token, user });
-  } catch (err) {
-    console.error("Signup error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ message: "Missing email or password" });
-    }
-
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, name, email, role, password_hash")
-      .eq("email", email)
-      .limit(1);
-
-    if (error) {
-      console.error("Supabase select error:", error);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    const user = users && users[0];
-    if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const token = generateToken(user);
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
-  } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-app.get("/api/auth/me", authMiddleware, async (req, res) => {
-  try {
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, name, email, role")
-      .eq("id", req.user.id)
-      .limit(1);
-
-    if (error) {
-      console.error("Supabase select error:", error);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    const user = users && users[0];
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json({ user });
-  } catch (err) {
-    console.error("Me error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-// 404 handler - returns JSON instead of HTML
-app.use((req, res) => {
-  res
-    .status(404)
-    .json({ message: `Route ${req.method} ${req.path} not found` });
-});
-
-// Error handler middleware - ensures all errors return JSON
-app.use((err, req, res, next) => {
-  console.error("Global error handler:", err);
-  res.status(err.status || 500).json({
-    message: err.message || "Internal server error",
-    error: process.env.NODE_ENV === "development" ? err.stack : undefined,
-  });
-});
+app.use(
+  "/api/telemetry",
+  // authMiddleware,
+  // requireRole("transporter"),
+  telemetryRoutes
+);
 
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
