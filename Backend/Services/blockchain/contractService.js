@@ -20,13 +20,13 @@ async function getContract(userId, contractName) {
 
     const identityData = JSON.parse(await fs.readFile(walletPath, 'utf8'));
 
-    // 2. TLS Setup
-    const tlsCertPath = path.resolve(__dirname, '../../../Blockchain/test-network/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt');
+    // 2. TLS Setup - FreshRoute Production Network
+    const tlsCertPath = path.resolve(__dirname, '../../../Blockchain/freshroute-network/organizations/peerOrganizations/farmer.freshroute.com/peers/peer0.farmer.freshroute.com/tls/ca.crt');
     const tlsRootCert = await fs.readFile(tlsCertPath);
     const tlsCredentials = grpc.credentials.createSsl(tlsRootCert);
     
     const client = new grpc.Client('localhost:7051', tlsCredentials, {
-        'grpc.ssl_target_name_override': 'peer0.org1.example.com',
+        'grpc.ssl_target_name_override': 'peer0.farmer.freshroute.com',
     });
 
     // 3. Gateway Connection
@@ -42,10 +42,10 @@ async function getContract(userId, contractName) {
         hash: hash.sha256,
     });
 
-    const network = gateway.getNetwork('mychannel');
+    const network = gateway.getNetwork('freshroute-channel');
 
     // 4. GET SPECIFIC CONTRACT
-    // We connect to chaincode 'freshroute' (from Step 2), and request the specific class
+    // We connect to chaincode 'freshroute' on FreshRoute Network
     const contract = network.getContract('freshroute', contractName);
 
     return {

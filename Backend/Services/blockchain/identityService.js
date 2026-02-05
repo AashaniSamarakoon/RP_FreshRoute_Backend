@@ -2,15 +2,15 @@ const FabricCAServices = require("fabric-ca-client");
 const { Wallets } = require("fabric-network");
 const path = require("path");
 
-// Mapping your specific supply chain roles to the correct Network Organizations
+// Mapping your specific supply chain roles to FreshRoute Network Organizations
 const connectionConfig = {
-  farmer: { url: "https://localhost:7054", name: "ca-org1", mspId: "Org1MSP" }, // Supplier
-  buyer: { url: "https://localhost:8054", name: "ca-org2", mspId: "Org2MSP" }, // Consumer
+  farmer: { url: "https://localhost:7054", name: "ca-farmer", mspId: "FarmerOrgMSP" }, // Farmer Organization
+  buyer: { url: "https://localhost:8054", name: "ca-buyer", mspId: "BuyerOrgMSP" }, // Buyer Organization
   transporter: {
-    url: "https://localhost:11054",
-    name: "ca-org3",
-    mspId: "Org3MSP",
-  }, // Logistics
+    url: "https://localhost:9054",
+    name: "ca-transporter",
+    mspId: "TransporterOrgMSP",
+  }, // Transporter Organization
 };
 
 async function registerAndEnrollUser(userId, role) {

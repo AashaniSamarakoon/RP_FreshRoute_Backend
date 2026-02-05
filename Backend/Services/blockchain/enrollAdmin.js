@@ -4,9 +4,9 @@ const fs = require('fs');
 const path = require('path');
 
 const orgs = [
-    { url: 'https://localhost:7054',  name: 'ca-org1', mspId: 'Org1MSP' }, // Supplier
-    { url: 'https://localhost:8054',  name: 'ca-org2', mspId: 'Org2MSP' }, // Consumer
-    { url: 'https://localhost:11054', name: 'ca-org3', mspId: 'Org3MSP' }  // Logistics
+    { url: 'https://localhost:7054',  name: 'ca-farmer', mspId: 'FarmerOrgMSP' }, // Farmer Organization
+    { url: 'https://localhost:8054',  name: 'ca-buyer', mspId: 'BuyerOrgMSP' }, // Buyer Organization
+    { url: 'https://localhost:9054', name: 'ca-transporter', mspId: 'TransporterOrgMSP' }  // Transporter Organization
 ];
 
 async function main() {

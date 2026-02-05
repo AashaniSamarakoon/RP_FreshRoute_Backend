@@ -8,10 +8,25 @@ export class BaseContract extends Contract {
     // Helper: Get Client Identity & Role
     protected getClient(ctx: Context) {
         const cid = ctx.clientIdentity;
+        const mspId = cid.getMSPID();
+        
+        // Map MSP ID to role if role attribute is not present
+        let role = cid.getAttributeValue('role');
+        if (!role) {
+            // Derive role from MSP ID for admin users
+            if (mspId === 'FarmerOrgMSP') {
+                role = 'farmer';
+            } else if (mspId === 'BuyerOrgMSP') {
+                role = 'buyer';
+            } else if (mspId === 'TransporterOrgMSP') {
+                role = 'transporter';
+            }
+        }
+        
         return {
             id: cid.getID(),
-            mspId: cid.getMSPID(),
-            role: cid.getAttributeValue('role')
+            mspId: mspId,
+            role: role
         };
     }
 
