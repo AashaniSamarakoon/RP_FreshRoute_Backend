@@ -30,7 +30,7 @@ Organizations:
     OrdererEndpoints:
       - orderer.freshroute.com:7050
       - orderer2.freshroute.com:7052
-      - orderer3.freshroute.com:7054
+      - orderer3.freshroute.com:7056
 
   - &FarmerOrg
     Name: FarmerOrgMSP

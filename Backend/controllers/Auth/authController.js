@@ -56,11 +56,11 @@ const signup = async (req, res) => {
       role === "farmer"
         ? "farmer"
         : role === "buyer"
-        ? "buyers"
-        : "transporter";
+          ? "buyers"
+          : "transporter";
 
     console.log(
-      `[Signup] 📝 Creating role entry in table: '${roleTable}' for user ${user.id} (role: '${role}')`
+      `[Signup] 📝 Creating role entry in table: '${roleTable}' for user ${user.id} (role: '${role}')`,
     );
     const { data: roleData, error: roleError } = await supabase
       .from(roleTable)
@@ -74,18 +74,16 @@ const signup = async (req, res) => {
 
     if (roleError) {
       console.error(
-        `❌ [Signup] FAILED to insert into '${roleTable}': ${roleError.message}`
+        `❌ [Signup] FAILED to insert into '${roleTable}': ${roleError.message}`,
       );
       await supabase.from("users").delete().eq("id", user.id);
-      return res
-        .status(500)
-        .json({
-          message: `Failed to create ${role} entry`,
-          error: roleError.message,
-        });
+      return res.status(500).json({
+        message: `Failed to create ${role} entry`,
+        error: roleError.message,
+      });
     }
     console.log(
-      `✅ [Signup] Successfully created ${role} entry in '${roleTable}'`
+      `✅ [Signup] Successfully created ${role} entry in '${roleTable}'`,
     );
 
     // ==========================================
@@ -99,17 +97,17 @@ const signup = async (req, res) => {
       identitySuccess = await registerAndEnrollUser(user.id, role);
       if (!identitySuccess) {
         console.error(
-          "CRITICAL: Supabase user created but Blockchain identity failed."
+          "CRITICAL: Supabase user created but Blockchain identity failed.",
         );
         ledgerStatus = "Identity Failed";
       }
     } catch (blockchainError) {
       console.error(
         "⚠️ Blockchain service unavailable:",
-        blockchainError.message
+        blockchainError.message,
       );
       console.log(
-        "ℹ️ User created in Supabase. Blockchain registration skipped."
+        "ℹ️ User created in Supabase. Blockchain registration skipped.",
       );
       ledgerStatus = "Blockchain Service Unavailable";
     }
@@ -120,11 +118,17 @@ const signup = async (req, res) => {
       // ==========================================
       try {
         console.log(
-          "Connecting to Gateway to register participant on Ledger..."
+          "Connecting to Gateway to register participant on Ledger...",
         );
 
-        // Connect to the 'UserContract' specifically using the new user's credentials
-        const { contract, close } = await getContract(user.id, "UserContract");
+        // IMPORTANT: Use admin identity for ledger operations
+        // CA-enrolled user identities are not compatible with cryptogen-based channel
+        // TODO: After migrating channel to CA certificates, switch to: getContract(user.id, "UserContract")
+        const adminIdentityId = `admin.${role === "farmer" ? "FarmerOrgMSP" : role === "buyer" ? "BuyerOrgMSP" : "TransporterOrgMSP"}`;
+        const { contract, close } = await getContract(
+          adminIdentityId,
+          "UserContract",
+        );
 
         try {
           // Call RegisterParticipant(id, name, role)

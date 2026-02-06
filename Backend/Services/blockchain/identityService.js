@@ -4,16 +4,8 @@ const path = require("path");
 
 // Mapping your specific supply chain roles to FreshRoute Network Organizations
 const connectionConfig = {
-  farmer: {
-    url: "https://localhost:7054",
-    name: "ca-farmer",
-    mspId: "FarmerOrgMSP",
-  }, // Farmer Organization
-  buyer: {
-    url: "https://localhost:8054",
-    name: "ca-buyer",
-    mspId: "BuyerOrgMSP",
-  }, // Buyer Organization
+  farmer: { url: "https://localhost:7054", name: "ca-farmer", mspId: "FarmerOrgMSP" }, // Farmer Organization
+  buyer: { url: "https://localhost:8054", name: "ca-buyer", mspId: "BuyerOrgMSP" }, // Buyer Organization
   transporter: {
     url: "https://localhost:9054",
     name: "ca-transporter",
@@ -42,12 +34,12 @@ async function registerAndEnrollUser(userId, role) {
     // 3. Get the admin for the specific Org to authorize registration
     const adminId = `admin.${config.mspId}`;
     console.log(
-      `[Blockchain] Looking for admin identity: ${adminId} in wallet at ${walletPath}`,
+      `[Blockchain] Looking for admin identity: ${adminId} in wallet at ${walletPath}`
     );
     const adminIdentity = await wallet.get(adminId);
     if (!adminIdentity) {
       throw new Error(
-        `Admin identity '${adminId}' not found in wallet. Run enrollAdmin.js first. Wallet path: ${walletPath}`,
+        `Admin identity '${adminId}' not found in wallet. Run enrollAdmin.js first. Wallet path: ${walletPath}`
       );
     }
     console.log(`[Blockchain] Found admin identity for ${adminId}`, {
@@ -62,7 +54,7 @@ async function registerAndEnrollUser(userId, role) {
       !adminIdentity.credentials.privateKey
     ) {
       throw new Error(
-        `Admin identity '${adminId}' is incomplete. Missing credentials. Try running enrollAdmin.js again.`,
+        `Admin identity '${adminId}' is incomplete. Missing credentials. Try running enrollAdmin.js again.`
       );
     }
 
@@ -74,17 +66,17 @@ async function registerAndEnrollUser(userId, role) {
 
     if (!adminUser) {
       throw new Error(
-        `Failed to create user context for admin ${adminId}. Wallet identity may be corrupted.`,
+        `Failed to create user context for admin ${adminId}. Wallet identity may be corrupted.`
       );
     }
     console.log(
-      `[Blockchain] Admin user context created successfully for ${adminId}`,
+      `[Blockchain] Admin user context created successfully for ${adminId}`
     );
 
     // 4. Register the user with ABAC attributes for your smart contracts
     // This 'role' attribute is what your chaincode uses to verify permissions.
     console.log(
-      `[Blockchain] Registering user ${userId} with role ${role} on CA ${config.url}`,
+      `[Blockchain] Registering user ${userId} with role ${role} on CA ${config.url}`
     );
     const secret = await ca.register(
       {
@@ -93,7 +85,7 @@ async function registerAndEnrollUser(userId, role) {
         role: "client",
         attrs: [{ name: "role", value: role, ecert: true }],
       },
-      adminUser,
+      adminUser
     );
     console.log(`[Blockchain] User ${userId} registered successfully`);
 
@@ -117,12 +109,12 @@ async function registerAndEnrollUser(userId, role) {
     // 6. Save to wallet named by Supabase UUID
     await wallet.put(userId, x509Identity);
     console.log(
-      `✅ Successfully enrolled ${role} user into ${config.mspId} (Wallet ID: ${userId})`,
+      `✅ Successfully enrolled ${role} user into ${config.mspId} (Wallet ID: ${userId})`
     );
     return true;
   } catch (error) {
     console.error(
-      `❌ Blockchain Registration Error for user ${userId} (role: ${role}): ${error.message}`,
+      `❌ Blockchain Registration Error for user ${userId} (role: ${role}): ${error.message}`
     );
     console.error(`Stack:`, error.stack);
     return false;

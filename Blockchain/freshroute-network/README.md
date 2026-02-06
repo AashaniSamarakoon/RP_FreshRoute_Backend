@@ -45,20 +45,41 @@ This is a production-ready Hyperledger Fabric network for FreshRoute with three 
 
 ## Quick Start
 
-### 1. Start the Network
+### 1. Start Certificate Authorities (CAs)
 
 ```bash
 cd freshroute-network
+./network.sh up -ca
+```
+
+This will start the Certificate Authority containers for all organizations.
+
+### 2. Enroll All Identities from CAs
+
+```bash
+./enroll-only.sh
+```
+
+This will:
+
+- Enroll CA admin for each organization
+- Register and enroll all peer identities
+- Register and enroll user identities with role attributes
+- Register and enroll admin identities
+- Generate all cryptographic material from CAs
+
+### 3. Start the Network
+
+```bash
 ./network.sh up
 ```
 
 This will:
 
-- Generate crypto material for all organizations
-- Create genesis block
+- Create channel genesis block with CA-issued certificates
 - Start all containers (peers, orderers, CouchDB)
 
-### 2. Create Channel
+### 4. Create Channel and Join Peers
 
 ```bash
 ./network.sh createChannel -c freshroute-channel
@@ -67,11 +88,17 @@ This will:
 This will:
 
 - Create the channel genesis block
-- Join all orderers to the channel
+- Join all orderers to the channel using osnadmin
 - Join all peer organizations to the channel
 - Set anchor peers for each organization
 
-### 3. Deploy Chaincode (CCAAS)
+Alternatively, you can use the helper script to join peers:
+
+```bash
+./join-peers-to-channel.sh
+```
+
+### 5. Deploy Chaincode (CCAAS)
 
 ```bash
 ./network.sh deployCCAAS -ccn freshroute -ccp ../asset-transfer-basic/chaincode-typescript/ -ccl typescript
@@ -86,7 +113,7 @@ This will:
 - Commit chaincode definition
 - Start chaincode containers
 
-### 4. Stop the Network
+### 6. Stop the Network
 
 ```bash
 ./network.sh down
@@ -116,12 +143,28 @@ This will stop all containers and remove volumes (ledger data will be lost).
 
 ## Network Components
 
+### Certificate Authorities
+
+The network uses Fabric CAs for identity management:
+
+- **ca.farmer.freshroute.com** (port 7054)
+- **ca.buyer.freshroute.com** (port 8054)
+- **ca.transporter.freshroute.com** (port 9054)
+- **ca.orderer.freshroute.com** (port 10054)
+
 ### Crypto Material
 
-All cryptographic material is generated using `cryptogen` and stored in:
+All cryptographic material is generated using **Fabric CAs** (not cryptogen) and stored in:
 
-- `organizations/peerOrganizations/`
-- `organizations/ordererOrganizations/`
+- `organizations/peerOrganizations/` - Peer organization certificates
+- `organizations/ordererOrganizations/` - Orderer organization certificates
+- `organizations/fabric-ca/` - CA server certificates and enrollment scripts
+
+Each identity includes:
+
+- MSP certificates with NodeOUs enabled
+- TLS certificates for secure communication
+- Role-based attributes (farmer/buyer/transporter) in enrollment certificates
 
 ### Channel Artifacts
 

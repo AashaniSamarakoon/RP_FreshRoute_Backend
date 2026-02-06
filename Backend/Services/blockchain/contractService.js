@@ -23,20 +23,35 @@ async function getContract(userId, contractName) {
   const identityData = JSON.parse(await fs.readFile(walletPath, "utf8"));
 
   // 2. TLS Setup - FreshRoute Production Network
-  const tlsCertPath = path.resolve(
+  // Peer TLS certificate
+  const peerTlsCertPath = path.resolve(
     __dirname,
     "../../../Blockchain/freshroute-network/organizations/peerOrganizations/farmer.freshroute.com/peers/peer0.farmer.freshroute.com/tls/ca.crt",
   );
-  const tlsRootCert = await fs.readFile(tlsCertPath);
-  const tlsCredentials = grpc.credentials.createSsl(tlsRootCert);
+  const peerTlsRootCert = await fs.readFile(peerTlsCertPath);
+  const peerTlsCredentials = grpc.credentials.createSsl(peerTlsRootCert);
 
-  const client = new grpc.Client("localhost:7051", tlsCredentials, {
+  // Orderer TLS certificate
+  const ordererTlsCertPath = path.resolve(
+    __dirname,
+    "../../../Blockchain/freshroute-network/organizations/ordererOrganizations/freshroute.com/orderers/orderer.freshroute.com/tls/ca.crt",
+  );
+  const ordererTlsRootCert = await fs.readFile(ordererTlsCertPath);
+  const ordererTlsCredentials = grpc.credentials.createSsl(ordererTlsRootCert);
+
+  // Peer client
+  const peerClient = new grpc.Client("localhost:7051", peerTlsCredentials, {
     "grpc.ssl_target_name_override": "peer0.farmer.freshroute.com",
   });
 
-  // 3. Gateway Connection
+  // Orderer client (not directly used but helps with discovery)
+  const ordererClient = new grpc.Client("localhost:7050", ordererTlsCredentials, {
+    "grpc.ssl_target_name_override": "orderer.freshroute.com",
+  });
+
+  // 3. Gateway Connection with timeouts
   const gateway = connect({
-    client,
+    client: peerClient,
     identity: {
       mspId: identityData.mspId,
       credentials: Buffer.from(identityData.credentials.certificate),
@@ -45,6 +60,11 @@ async function getContract(userId, contractName) {
       crypto.createPrivateKey(identityData.credentials.privateKey),
     ),
     hash: hash.sha256,
+    // Add explicit timeouts for better error handling
+    evaluateOptions: () => ({ deadline: Date.now() + 5000 }),
+    endorseOptions: () => ({ deadline: Date.now() + 15000 }),
+    submitOptions: () => ({ deadline: Date.now() + 5000 }),
+    commitStatusOptions: () => ({ deadline: Date.now() + 60000 }),
   });
 
   const network = gateway.getNetwork("freshroute-channel");
@@ -57,7 +77,8 @@ async function getContract(userId, contractName) {
     contract,
     close: () => {
       gateway.close();
-      client.close();
+      peerClient.close();
+      ordererClient.close();
     },
   };
 }
