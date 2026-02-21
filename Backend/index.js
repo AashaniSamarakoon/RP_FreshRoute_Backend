@@ -49,6 +49,10 @@ const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
 
 const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
+const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
+const paymentSlipRoutes = require("./routes/buyer/paymentSlipRoutes");
+const paymentRoutes = require("./routes/buyer/paymentRoutes");
+const deliveryRoutes = require("./routes/transporter/deliveryRoutes");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -64,7 +68,7 @@ app.use((req, res, next) => {
     console.log(
       `${icon} [${new Date().toISOString()}] ${req.method} ${req.path} - ${
         res.statusCode
-      } (${duration}ms)`
+      } (${duration}ms)`,
     );
     if (isError || req.path.includes("forecast")) {
       console.log(`   Data: ${JSON.stringify(data).substring(0, 100)}`);
@@ -96,7 +100,7 @@ app.use((req, res, next) => {
     "/accuracy",
   ];
   const isFarmerRoute = forecastRoutes.some((route) =>
-    req.path.startsWith(route)
+    req.path.startsWith(route),
   );
 
   if (isFarmerRoute && !req.path.startsWith("/api/")) {
@@ -112,7 +116,7 @@ app.use(
   "/api/transporter",
   authMiddleware,
   requireRole("transporter"),
-  transporterRoutes
+  transporterRoutes,
 );
 
 // Farmer routes (forecast, notifications, SMS, etc.)
@@ -126,7 +130,7 @@ app.use(
   "/api/farmer/add-predict-stock",
   authMiddleware,
   requireRole("farmer"),
-  predictStockRoutes
+  predictStockRoutes,
 );
 
 // Farmer proposals (view/accept/reject buyer requests)
@@ -137,7 +141,7 @@ app.use(
   "/api/buyer/place-order",
   authMiddleware,
   requireRole("buyer"),
-  orderRoutes
+  orderRoutes,
 );
 
 // Buyer matching (view/trigger proposals from matching algorithm)
@@ -148,7 +152,7 @@ app.get(
   "/api/buyer/prices/freshroute",
   authMiddleware,
   requireRole("buyer"),
-  getFreshRoutePrices
+  getFreshRoutePrices,
 );
 
 // Auth routes
@@ -158,12 +162,21 @@ app.use("/api/trust", trustRoutes);
 // Alert routes (for notifications and SMS)
 app.use("/api/alerts", alertRoutes);
 
+// Payment slip routes (Bank slip upload & verification - Fully Automated)
+app.use("/api/buyer/payment-slip", paymentSlipRoutes);
+
+// Payment status and release routes
+app.use("/api/buyer/payment", paymentRoutes);
+
+// Transporter delivery routes (quality check, pickup, delivery confirmation)
+app.use("/api/transporter/delivery", deliveryRoutes);
+
 // Accuracy insights routes (forecast accuracy analysis)
 app.use(
   "/api/farmer/accuracy",
   authMiddleware,
   requireRole("farmer"),
-  accuracyRoutes
+  accuracyRoutes,
 );
 
 // Dashboard routes
@@ -171,18 +184,21 @@ app.use("/api/farmer/dashboard", farmerDashboardRoutes);
 app.use("/api/transporter/dashboard", transporterDashboardRoutes);
 app.use("/api/buyer/dashboard", buyerDashboardRoutes);
 
+// Blockchain Dashboard routes (NEW - business-first, role-based)
+app.use("/api/dashboard", authMiddleware, blockchainDashboardRoutes);
+
 app.use(
   "/api/logistics",
   // authMiddleware,
   // requireRole("transporter"),
-  logisticsRoutes
+  logisticsRoutes,
 );
 
 app.use(
   "/api/telemetry",
   // authMiddleware,
   // requireRole("transporter"),
-  telemetryRoutes
+  telemetryRoutes,
 );
 
 // ---------- START SERVER ----------
@@ -237,7 +253,7 @@ cron.schedule("0 0 * * *", async () => {
 });
 
 console.log(
-  "[Cron] Scheduled jobs initialized: Batch matching (every 2h), Expiry check (daily)"
+  "[Cron] Scheduled jobs initialized: Batch matching (every 2h), Expiry check (daily)",
 );
 
 // Initialize today's FreshRoute prices on startup

@@ -65,7 +65,7 @@ const getProposals = async (req, res) => {
             )
           )
         )
-      `
+      `,
       )
       .in("stock_id", stockIds)
       .eq("status", "PENDING_FARMER")
@@ -138,7 +138,7 @@ const acceptProposal = async (req, res) => {
 
     try {
       console.log(
-        `[Blockchain] Locking stock for Order ${blockchainOrderId}...`
+        `[Blockchain] Locking stock for Order ${blockchainOrderId}...`,
       );
 
       const { contract, close } = await getContract(userId, "OrderContract");
@@ -148,7 +148,7 @@ const acceptProposal = async (req, res) => {
           "CreateOrder",
           blockchainOrderId,
           harvestId,
-          proposal.quantity_proposed.toString()
+          proposal.quantity_proposed.toString(),
         );
         blockchainStatus = "Confirmed";
         console.log("[Blockchain] Stock locked successfully.");
@@ -165,7 +165,7 @@ const acceptProposal = async (req, res) => {
     await supabase
       .from("match_proposals")
       .update({
-        status: "CONFIRMED",
+        status: "ACCEPTED",
         farmer_response_at: new Date().toISOString(),
       })
       .eq("id", proposalId);
@@ -176,13 +176,24 @@ const acceptProposal = async (req, res) => {
       .update({ quantity: stock.quantity - proposal.quantity_proposed })
       .eq("id", proposal.stock_id);
 
-    // 6. Update order status
+    // Calculate total amount
+    const { data: stockData } = await supabase
+      .from("estimated_stock")
+      .select("price_per_kg")
+      .eq("id", proposal.stock_id)
+      .single();
+
+    const totalAmount =
+      proposal.quantity_proposed * (stockData?.price_per_kg || 0);
+
+    // 6. Update order status to AWAITING_PAYMENT
     await supabase
       .from("placed_orders")
       .update({
-        status: "CONFIRMED",
+        status: "AWAITING_PAYMENT",
         selected_farmer_id: farmerId,
         harvest_id: proposal.stock_id,
+        total_amount: totalAmount,
         blockchain_status: blockchainStatus,
         updated_at: new Date().toISOString(),
       })
@@ -199,11 +210,16 @@ const acceptProposal = async (req, res) => {
       },
     ]);
 
-    // TODO: Notify buyer that farmer accepted
+    // TODO: Notify buyer to complete payment
 
     return res.status(200).json({
-      message: "Proposal accepted! Order is now confirmed.",
+      message:
+        "Proposal accepted! Buyer must now upload bank payment slip to confirm order.",
+      requiresPayment: true,
+      totalAmount: totalAmount,
       blockchainStatus: blockchainStatus,
+      paymentInstructions:
+        "Please upload bank payment slip to /api/buyer/payment-slip/upload",
     });
   } catch (err) {
     console.error("AcceptProposal Error:", err);

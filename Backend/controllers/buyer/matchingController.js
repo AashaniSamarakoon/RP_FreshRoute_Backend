@@ -15,6 +15,74 @@ const getBuyerId = async (userId) => {
   return buyerData.id;
 };
 
+// Helper: Get farmer ID from user ID
+const getFarmerId = async (userId) => {
+  const { data: farmerData, error: farmerError } = await supabase
+    .from("farmer")
+    .select("id")
+    .eq("user_id", userId)
+    .single();
+
+  if (farmerError || !farmerData) {
+    throw new Error("No farmer profile found.");
+  }
+  return farmerData.id;
+};
+
+// Helper: Resolve buyer ID (accepts either user_id or buyer_id)
+const resolveBuyerId = async (id) => {
+  // First, check if this ID exists in buyers table directly
+  const { data: directBuyer } = await supabase
+    .from("buyers")
+    .select("id")
+    .eq("id", id)
+    .single();
+
+  if (directBuyer) {
+    return id; // It's already a buyer_id
+  }
+
+  // If not, try to find it as a user_id
+  const { data: buyerData } = await supabase
+    .from("buyers")
+    .select("id")
+    .eq("user_id", id)
+    .single();
+
+  if (buyerData) {
+    return buyerData.id; // Convert user_id to buyer_id
+  }
+
+  throw new Error("No buyer found with the provided ID");
+};
+
+// Helper: Resolve farmer ID (accepts either user_id or farmer_id)
+const resolveFarmerId = async (id) => {
+  // First, check if this ID exists in farmer table directly
+  const { data: directFarmer } = await supabase
+    .from("farmer")
+    .select("id")
+    .eq("id", id)
+    .single();
+
+  if (directFarmer) {
+    return id; // It's already a farmer_id
+  }
+
+  // If not, try to find it as a user_id
+  const { data: farmerData } = await supabase
+    .from("farmer")
+    .select("id")
+    .eq("user_id", id)
+    .single();
+
+  if (farmerData) {
+    return farmerData.id; // Convert user_id to farmer_id
+  }
+
+  throw new Error("No farmer found with the provided ID");
+};
+
 // Get all proposals for a buyer's order
 const getProposalsForOrder = async (req, res) => {
   try {
@@ -300,9 +368,192 @@ const approveProposal = async (req, res) => {
   }
 };
 
+// Get proposals by buyer ID (admin or cross-reference use)
+const getProposalsByBuyerId = async (req, res) => {
+  try {
+    const { buyerId: inputId } = req.params;
+
+    if (!inputId) {
+      return res.status(400).json({ error: "Buyer ID or User ID is required" });
+    }
+
+    // Resolve to actual buyer_id (accepts either user_id or buyer_id)
+    const buyerId = await resolveBuyerId(inputId);
+
+    // Get all orders for this buyer
+    const { data: orders, error: ordersError } = await supabase
+      .from("placed_orders")
+      .select("id, fruit_type, variant, quantity, required_date, status")
+      .eq("buyer_id", buyerId);
+
+    if (ordersError) {
+      return res.status(500).json({ error: ordersError.message });
+    }
+
+    if (!orders || orders.length === 0) {
+      return res.status(200).json({ 
+        buyerId,
+        orders: [],
+        proposals: [],
+        totalProposals: 0 
+      });
+    }
+
+    const orderIds = orders.map((o) => o.id);
+
+    // Get all proposals for buyer's orders
+    const { data: proposals, error: proposalError } = await supabase
+      .from("match_proposals")
+      .select(
+        `
+        id,
+        order_id,
+        stock_id,
+        quantity_proposed,
+        status,
+        match_score,
+        expires_at,
+        created_at,
+        stock:stock_id (
+          id,
+          quantity,
+          price_per_kg,
+          estimated_harvest_date,
+          farmer:farmer_id (
+            id,
+            reputation,
+            location,
+            user:user_id (
+              id,
+              name,
+              email,
+              phone
+            )
+          )
+        ),
+        order:order_id (
+          id,
+          fruit_type,
+          variant,
+          quantity,
+          required_date
+        )
+      `
+      )
+      .in("order_id", orderIds)
+      .order("created_at", { ascending: false });
+
+    if (proposalError) {
+      return res.status(500).json({ error: proposalError.message });
+    }
+
+    return res.status(200).json({
+      buyerId,
+      orders,
+      proposals: proposals || [],
+      totalProposals: proposals ? proposals.length : 0,
+    });
+  } catch (err) {
+    console.error("[Matching] Error getting proposals by buyer ID:", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Get proposals by farmer ID (admin or cross-reference use)
+const getProposalsByFarmerId = async (req, res) => {
+  try {
+    const { farmerId: inputId } = req.params;
+
+    if (!inputId) {
+      return res.status(400).json({ error: "Farmer ID or User ID is required" });
+    }
+
+    // Resolve to actual farmer_id (accepts either user_id or farmer_id)
+    const farmerId = await resolveFarmerId(inputId);
+
+    // Get all stocks for this farmer
+    const { data: stocks, error: stockError } = await supabase
+      .from("estimated_stock")
+      .select("id, quantity, price_per_kg, estimated_harvest_date, fruit_type, variant")
+      .eq("farmer_id", farmerId);
+
+    if (stockError) {
+      return res.status(500).json({ error: stockError.message });
+    }
+
+    if (!stocks || stocks.length === 0) {
+      return res.status(200).json({
+        farmerId,
+        stocks: [],
+        proposals: [],
+        totalProposals: 0
+      });
+    }
+
+    const stockIds = stocks.map((s) => s.id);
+
+    // Get all proposals for farmer's stocks
+    const { data: proposals, error: proposalError } = await supabase
+      .from("match_proposals")
+      .select(
+        `
+        id,
+        order_id,
+        stock_id,
+        quantity_proposed,
+        status,
+        match_score,
+        expires_at,
+        created_at,
+        order:order_id (
+          id,
+          fruit_type,
+          variant,
+          quantity,
+          required_date,
+          delivery_location,
+          buyer:buyer_id (
+            id,
+            user:user_id (
+              id,
+              name,
+              email,
+              phone
+            )
+          )
+        ),
+        stock:stock_id (
+          id,
+          quantity,
+          price_per_kg,
+          estimated_harvest_date
+        )
+      `
+      )
+      .in("stock_id", stockIds)
+      .order("created_at", { ascending: false });
+
+    if (proposalError) {
+      return res.status(500).json({ error: proposalError.message });
+    }
+
+    return res.status(200).json({
+      farmerId,
+      stocks,
+      proposals: proposals || [],
+      totalProposals: proposals ? proposals.length : 0,
+    });
+  } catch (err) {
+    console.error("[Matching] Error getting proposals by farmer ID:", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   getProposalsForOrder,
   getAllProposals,
+  getProposalsByBuyerId,
+  getProposalsByFarmerId,
   triggerMatching,
   approveProposal,
 };

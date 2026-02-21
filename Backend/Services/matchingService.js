@@ -191,7 +191,7 @@ const farmerAcceptProposal = async (proposalId) => {
     // Confirm stock match
     const stockConfirmed = await confirmStockMatch(
       proposal.stock_id,
-      proposal.order_id
+      proposal.order_id,
     );
     if (!stockConfirmed) {
       return { success: false, error: "Failed to confirm stock" };
@@ -222,7 +222,7 @@ const farmerAcceptProposal = async (proposalId) => {
     }
 
     console.log(
-      `[Proposal] Farmer accepted proposal: ${proposalId}, Order created: ${orderResult.orderId}`
+      `[Proposal] Farmer accepted proposal: ${proposalId}, Order created: ${orderResult.orderId}`,
     );
     return { success: true, proposalId, orderId: orderResult.orderId };
   } catch (err) {
@@ -245,7 +245,7 @@ const createOrderFromProposal = async (proposalId) => {
         quantity_proposed,
         order:order_id (buyer_id, fruit_type, variant, quantity),
         stock:stock_id (farmer_id, estimated_harvest_date)
-      `
+      `,
       )
       .eq("id", proposalId)
       .eq("status", "ACCEPTED")
@@ -255,16 +255,17 @@ const createOrderFromProposal = async (proposalId) => {
       return { success: false, error: "Proposal not found or not accepted" };
     }
 
-    // Create finalized order
+    // Create finalized order (transport job) with reference to placed_order
     const { data: order, error: insertError } = await supabase
       .from("orders")
       .insert({
+        placed_order_id: proposal.order_id, // Link to main order
         buyer_id: proposal.order.buyer_id,
         farmer_id: proposal.stock.farmer_id,
         fruit_type: proposal.order.fruit_type,
         fruit_variant: proposal.order.variant,
         quantity: proposal.quantity_proposed,
-        status: "pending",
+        status: "pending", // Waiting for driver assignment
         pickup_date: proposal.stock.estimated_harvest_date,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -277,11 +278,11 @@ const createOrderFromProposal = async (proposalId) => {
       return { success: false, error: "Failed to create order" };
     }
 
-    // Update placed_order status to CONFIRMED
+    // Update placed_order status to AWAITING_PAYMENT (not CONFIRMED - that status doesn't exist!)
     const { error: updateError } = await supabase
       .from("placed_orders")
       .update({
-        status: "CONFIRMED",
+        status: "AWAITING_PAYMENT", // Farmer accepted, buyer needs to pay
         updated_at: new Date().toISOString(),
       })
       .eq("id", proposal.order_id);
@@ -291,7 +292,7 @@ const createOrderFromProposal = async (proposalId) => {
     }
 
     console.log(
-      `[Order] Created finalized order: ${order.id} from proposal: ${proposalId}`
+      `[Order] Created finalized order: ${order.id} from proposal: ${proposalId}`,
     );
     return { success: true, orderId: order.id };
   } catch (err) {
@@ -391,7 +392,7 @@ const releaseOrderReservations = async (orderId) => {
     const count = data ? data.length : 0;
     if (count > 0) {
       console.log(
-        `[Stock] Released ${count} reservations for order ${orderId}`
+        `[Stock] Released ${count} reservations for order ${orderId}`,
       );
     }
     return count;
@@ -447,7 +448,7 @@ const runMatchingAlgorithm = async (orderId) => {
     const { data: allStocks, error: allStocksError } = await supabase
       .from("estimated_stock")
       .select(
-        "id, fruit_type, variant, grade, quantity, status, estimated_harvest_date, farmer_id"
+        "id, fruit_type, variant, grade, quantity, status, estimated_harvest_date, farmer_id",
       );
 
     console.log(`[Matching] Total stocks in DB: ${allStocks?.length || 0}`);
@@ -462,7 +463,7 @@ const runMatchingAlgorithm = async (orderId) => {
           status: s.status,
           qty: s.quantity,
           harvest_date: s.estimated_harvest_date,
-        }))
+        })),
       );
     }
 
@@ -474,7 +475,7 @@ const runMatchingAlgorithm = async (orderId) => {
     console.log(
       `[Matching] Stocks matching fruit_type '${order.fruit_type}': ${
         fruitMatch?.length || 0
-      }`
+      }`,
     );
 
     // --- Step 2b: Check stocks matching fruit_type + variant ---
@@ -484,7 +485,7 @@ const runMatchingAlgorithm = async (orderId) => {
       .eq("fruit_type", order.fruit_type)
       .eq("variant", order.variant);
     console.log(
-      `[Matching] + variant '${order.variant}': ${variantMatch?.length || 0}`
+      `[Matching] + variant '${order.variant}': ${variantMatch?.length || 0}`,
     );
 
     // --- Step 2c: Check stocks matching fruit_type + variant + grade ---
@@ -495,7 +496,7 @@ const runMatchingAlgorithm = async (orderId) => {
       .eq("variant", order.variant)
       .eq("grade", order.grade);
     console.log(
-      `[Matching] + grade '${order.grade}': ${gradeMatch?.length || 0}`
+      `[Matching] + grade '${order.grade}': ${gradeMatch?.length || 0}`,
     );
 
     // --- Step 2d: Check OPEN status ---
@@ -511,7 +512,7 @@ const runMatchingAlgorithm = async (orderId) => {
       console.log(
         `[Matching] ⚠️ ${
           gradeMatch.length - statusMatch.length
-        } stocks are NOT OPEN (RESERVED/MATCHED)`
+        } stocks are NOT OPEN (RESERVED/MATCHED)`,
       );
     }
 
@@ -527,20 +528,20 @@ const runMatchingAlgorithm = async (orderId) => {
     console.log(
       `[Matching] + harvest_date <= '${order.required_date}': ${
         dateMatch?.length || 0
-      }`
+      }`,
     );
     if (statusMatch && dateMatch && statusMatch.length !== dateMatch.length) {
       console.log(
         `[Matching] ⚠️ ${
           statusMatch.length - dateMatch.length
-        } stocks have harvest_date AFTER required_date`
+        } stocks have harvest_date AFTER required_date`,
       );
       statusMatch?.forEach((s) => {
         if (!dateMatch?.find((d) => d.id === s.id)) {
           console.log(
             `[Matching]    - Stock ${s.id.substring(0, 8)}... harvest: ${
               s.estimated_harvest_date
-            }, required: ${order.required_date}`
+            }, required: ${order.required_date}`,
           );
         }
       });
@@ -568,7 +569,7 @@ const runMatchingAlgorithm = async (orderId) => {
             phone
           )
         )
-      `
+      `,
       )
       .eq("fruit_type", order.fruit_type)
       .eq("variant", order.variant)
@@ -580,10 +581,10 @@ const runMatchingAlgorithm = async (orderId) => {
     if (poolError) throw new Error(poolError.message);
     if (!pool || pool.length === 0) {
       console.log(
-        "[Matching] ❌ No eligible OPEN stocks found after all filters."
+        "[Matching] ❌ No eligible OPEN stocks found after all filters.",
       );
       console.log(
-        "[Matching] Summary: Check fruit_type, variant, grade, status, and harvest_date"
+        "[Matching] Summary: Check fruit_type, variant, grade, status, and harvest_date",
       );
       return [];
     }
@@ -640,7 +641,7 @@ const runMatchingAlgorithm = async (orderId) => {
 
     // Calculate reservation expiry time
     const reservationExpiry = new Date(
-      Date.now() + RESERVATION_EXPIRY_MINUTES * 60 * 1000
+      Date.now() + RESERVATION_EXPIRY_MINUTES * 60 * 1000,
     ).toISOString();
 
     for (const candidate of candidates) {
@@ -652,13 +653,13 @@ const runMatchingAlgorithm = async (orderId) => {
       const reserved = await reserveStock(
         candidate.stock_id,
         order.id,
-        reservationExpiry
+        reservationExpiry,
       );
 
       if (!reserved) {
         // Stock was already taken by another order (race condition handled)
         console.log(
-          `[Matching] Stock ${candidate.stock_id} already reserved by another order, skipping.`
+          `[Matching] Stock ${candidate.stock_id} already reserved by another order, skipping.`,
         );
         continue;
       }
@@ -705,12 +706,12 @@ const runMatchingAlgorithm = async (orderId) => {
 
     if (remainingQty > 0) {
       console.log(
-        `[Matching] Warning: Order ${orderId} can only be partially fulfilled. Remaining: ${remainingQty} units`
+        `[Matching] Warning: Order ${orderId} can only be partially fulfilled. Remaining: ${remainingQty} units`,
       );
     }
 
     console.log(
-      `[Matching] Created ${fulfillmentPlan.length} proposals for Order ${orderId}`
+      `[Matching] Created ${fulfillmentPlan.length} proposals for Order ${orderId}`,
     );
 
     return fulfillmentPlan;
@@ -723,7 +724,7 @@ const runMatchingAlgorithm = async (orderId) => {
 // Batch matching for all unfulfilled orders (called by cron job)
 const runBatchMatching = async () => {
   console.log(
-    `[Batch Matching] Starting batch run at ${new Date().toISOString()}`
+    `[Batch Matching] Starting batch run at ${new Date().toISOString()}`,
   );
 
   try {
@@ -766,7 +767,7 @@ const runBatchMatching = async () => {
     }
 
     console.log(
-      `[Batch Matching] Completed. Matched: ${matchedCount}/${openOrders.length}`
+      `[Batch Matching] Completed. Matched: ${matchedCount}/${openOrders.length}`,
     );
     return { processed: openOrders.length, matched: matchedCount };
   } catch (err) {
@@ -810,7 +811,7 @@ const onNewStockAdded = async (stockId) => {
     }
 
     console.log(
-      `[Stock Event] Found ${matchingOrders.length} potential orders to match.`
+      `[Stock Event] Found ${matchingOrders.length} potential orders to match.`,
     );
 
     // Run matching for each relevant order

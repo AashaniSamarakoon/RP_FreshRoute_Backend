@@ -4,6 +4,8 @@ const { authMiddleware, requireRole } = require("../../Services/auth");
 const {
   getProposalsForOrder,
   getAllProposals,
+  getProposalsByBuyerId,
+  getProposalsByFarmerId,
   triggerMatching,
   approveProposal,
 } = require("../../controllers/buyer/matchingController");
@@ -16,6 +18,12 @@ router.post("/approve/:proposalId", approveProposal);
 
 // POST /api/buyer/matching/trigger/:orderId - Trigger matching algorithm for an order
 router.post("/trigger/:orderId", triggerMatching);
+
+// GET /api/buyer/matching/buyer/:buyerId - Get all proposals for a specific buyer ID
+router.get("/buyer/:buyerId", getProposalsByBuyerId);
+
+// GET /api/buyer/matching/farmer/:farmerId - Get all proposals for a specific farmer ID
+router.get("/farmer/:farmerId", getProposalsByFarmerId);
 
 // GET /api/buyer/matching/:orderId - Get all proposals for a specific order
 router.get("/:orderId", getProposalsForOrder);
