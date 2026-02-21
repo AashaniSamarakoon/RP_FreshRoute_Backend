@@ -7,6 +7,7 @@ const {
   confirmMatch,
   getMyOrders,
   getOrderById,
+  getOrderDetails,
 } = require("../../controllers/buyer/orderController");
 
 // @route   GET /
@@ -17,7 +18,11 @@ router.get("/", getMyOrders);
 // @route   GET /:orderId
 // @desc    Get single order by ID
 // @access  Private
-router.get("/:orderId", getOrderById);
+// @route   GET /details/:orderId
+// @desc    Get detailed order information
+// @access  Private
+router.get("/details/:orderId", getOrderDetails);
+// NOTE: simple `/:orderId` route removed — use `/details/:orderId` instead
 
 // @route   POST /
 // @desc    Place a new order
