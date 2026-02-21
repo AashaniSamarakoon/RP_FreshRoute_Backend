@@ -100,7 +100,7 @@ const getProposalsForOrder = async (req, res) => {
     const { data: order, error: orderError } = await supabase
       .from("placed_orders")
       .select(
-        "id, buyer_id, fruit_type, variant, quantity, required_date, status"
+        "id, buyer_id, fruit_type, variant, quantity, required_date, status",
       )
       .eq("id", orderId)
       .eq("buyer_id", buyerId)
@@ -143,7 +143,7 @@ const getProposalsForOrder = async (req, res) => {
             )
           )
         )
-      `
+      `,
       )
       .eq("order_id", orderId)
       .order("match_score", { ascending: false }); // Highest scores first
@@ -219,7 +219,7 @@ const getAllProposals = async (req, res) => {
           variant,
           quantity
         )
-      `
+      `,
       )
       .in("order_id", orderIds)
       .in("status", ["PENDING_BUYER", "PENDING_FARMER", "ACCEPTED"])
@@ -391,11 +391,11 @@ const getProposalsByBuyerId = async (req, res) => {
     }
 
     if (!orders || orders.length === 0) {
-      return res.status(200).json({ 
+      return res.status(200).json({
         buyerId,
         orders: [],
         proposals: [],
-        totalProposals: 0 
+        totalProposals: 0,
       });
     }
 
@@ -438,7 +438,7 @@ const getProposalsByBuyerId = async (req, res) => {
           quantity,
           required_date
         )
-      `
+      `,
       )
       .in("order_id", orderIds)
       .order("created_at", { ascending: false });
@@ -465,7 +465,9 @@ const getProposalsByFarmerId = async (req, res) => {
     const { farmerId: inputId } = req.params;
 
     if (!inputId) {
-      return res.status(400).json({ error: "Farmer ID or User ID is required" });
+      return res
+        .status(400)
+        .json({ error: "Farmer ID or User ID is required" });
     }
 
     // Resolve to actual farmer_id (accepts either user_id or farmer_id)
@@ -474,7 +476,9 @@ const getProposalsByFarmerId = async (req, res) => {
     // Get all stocks for this farmer
     const { data: stocks, error: stockError } = await supabase
       .from("estimated_stock")
-      .select("id, quantity, price_per_kg, estimated_harvest_date, fruit_type, variant")
+      .select(
+        "id, quantity, price_per_kg, estimated_harvest_date, fruit_type, variant",
+      )
       .eq("farmer_id", farmerId);
 
     if (stockError) {
@@ -486,7 +490,7 @@ const getProposalsByFarmerId = async (req, res) => {
         farmerId,
         stocks: [],
         proposals: [],
-        totalProposals: 0
+        totalProposals: 0,
       });
     }
 
@@ -528,7 +532,7 @@ const getProposalsByFarmerId = async (req, res) => {
           price_per_kg,
           estimated_harvest_date
         )
-      `
+      `,
       )
       .in("stock_id", stockIds)
       .order("created_at", { ascending: false });
