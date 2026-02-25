@@ -123,7 +123,8 @@ app.use(
 app.use("/api/farmer", authMiddleware, requireRole("farmer"), farmerRoutes);
 
 // Fruit properties (GET id, fruit_name, variant)
-app.use("/api/fruit-properties", authMiddleware, fruitsRoutes);
+// public endpoint – the frontend needs fruit list even before login
+app.use("/api/fruit-properties", fruitsRoutes);
 
 // Farmer predict stock submission
 app.use(

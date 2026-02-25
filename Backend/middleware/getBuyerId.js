@@ -18,10 +18,10 @@ const getBuyerId = async (req, res, next) => {
       });
     }
 
-    // Fetch buyer_id from buyers table using user_id from JWT
+    // Fetch buyer_id (which is the user_id) from buyers table using user_id from JWT
     const { data: buyerData, error } = await supabase
       .from("buyers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
@@ -32,7 +32,7 @@ const getBuyerId = async (req, res, next) => {
     }
 
     // Attach buyer_id to request object for use in controllers
-    req.buyerId = buyerData.id;
+    req.buyerId = buyerData.user_id;
     next();
   } catch (error) {
     console.error("getBuyerId middleware error:", error);

@@ -2,17 +2,18 @@ const { supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 
 // Helper: Get farmer ID from user ID
+// farmer table only stores user_id; this returns the UUID directly.
 const getFarmerId = async (userId) => {
   const { data: farmerData, error: farmerError } = await supabase
     .from("farmer")
-    .select("id")
+    .select("user_id")
     .eq("user_id", userId)
     .single();
 
   if (farmerError || !farmerData) {
     throw new Error("No farmer profile found.");
   }
-  return farmerData.id;
+  return farmerData.user_id;
 };
 
 // GET: View all pending proposals for this farmer
@@ -176,15 +177,45 @@ const acceptProposal = async (req, res) => {
       .update({ quantity: stock.quantity - proposal.quantity_proposed })
       .eq("id", proposal.stock_id);
 
-    // Calculate total amount
-    const { data: stockData } = await supabase
-      .from("estimated_stock")
-      .select("price_per_kg")
-      .eq("id", proposal.stock_id)
+    // Calculate total amount using buyer pricing logic
+    // first fetch the order to get location and other fields
+    const { data: orderRow } = await supabase
+      .from("placed_orders")
+      .select("*")
+      .eq("id", proposal.order_id)
       .single();
-
-    const totalAmount =
-      proposal.quantity_proposed * (stockData?.price_per_kg || 0);
+    let distance = 0;
+    if (orderRow) {
+      // compute distance between farmer and delivery point
+      const { data: farmerInfo } = await supabase
+        .from("farmer")
+        .select("latitude, longitude")
+        .eq("id", farmerId)
+        .single();
+      if (
+        farmerInfo &&
+        orderRow.latitude != null &&
+        orderRow.longitude != null
+      ) {
+        distance = calculateDistanceKm(
+          orderRow.latitude,
+          orderRow.longitude,
+          farmerInfo.latitude,
+          farmerInfo.longitude,
+        );
+      }
+    }
+    const unit = await fetchUnitPrice(
+      orderRow.fruit_type,
+      orderRow.variant,
+      orderRow.grade,
+      new Date().toISOString().split("T")[0],
+    );
+    const breakdown = calculatePrice(
+      { quantity: proposal.quantity_proposed, distance_km: distance },
+      unit,
+    );
+    const totalAmount = breakdown.totalPrice;
 
     // 6. Update order status to AWAITING_PAYMENT
     await supabase

@@ -2,58 +2,53 @@ const { supabase } = require("../../utils/supabaseClient");
 const { runMatchingAlgorithm } = require("../../Services/matchingService");
 
 // Helper: Get buyer ID from user ID
+// Since the buyers table uses `user_id` as the key, simply verify the row
+// exists and return the UUID itself.
 const getBuyerId = async (userId) => {
   const { data: buyerData, error: buyerError } = await supabase
     .from("buyers")
-    .select("id")
+    .select("user_id")
     .eq("user_id", userId)
     .single();
 
   if (buyerError || !buyerData) {
-    throw new Error("No buyer profile found.");
+    const msg = `No buyer profile found for user_id=${userId}`;
+    console.error(msg, buyerError);
+    throw new Error(msg);
   }
-  return buyerData.id;
+  return buyerData.user_id;
 };
 
 // Helper: Get farmer ID from user ID
+// The farmer table uses user_id as its primary key, so simply verify
+// existence and return it.
 const getFarmerId = async (userId) => {
   const { data: farmerData, error: farmerError } = await supabase
     .from("farmer")
-    .select("id")
+    .select("user_id")
     .eq("user_id", userId)
     .single();
 
   if (farmerError || !farmerData) {
     throw new Error("No farmer profile found.");
   }
-  return farmerData.id;
+  return farmerData.user_id;
 };
 
 // Helper: Resolve buyer ID (accepts either user_id or buyer_id)
+// When the table only has user_id, the two are identical; just verify
+// existence and return the value.
 const resolveBuyerId = async (id) => {
-  // First, check if this ID exists in buyers table directly
-  const { data: directBuyer } = await supabase
+  const { data: buyerData, error } = await supabase
     .from("buyers")
-    .select("id")
-    .eq("id", id)
-    .single();
-
-  if (directBuyer) {
-    return id; // It's already a buyer_id
-  }
-
-  // If not, try to find it as a user_id
-  const { data: buyerData } = await supabase
-    .from("buyers")
-    .select("id")
+    .select("user_id")
     .eq("user_id", id)
     .single();
 
-  if (buyerData) {
-    return buyerData.id; // Convert user_id to buyer_id
+  if (error || !buyerData) {
+    throw new Error(`No buyer found with the provided ID (${id})`);
   }
-
-  throw new Error("No buyer found with the provided ID");
+  return buyerData.user_id;
 };
 
 // Helper: Resolve farmer ID (accepts either user_id or farmer_id)
@@ -80,7 +75,7 @@ const resolveFarmerId = async (id) => {
     return farmerData.id; // Convert user_id to farmer_id
   }
 
-  throw new Error("No farmer found with the provided ID");
+  throw new Error(`No farmer found with the provided ID (${id})`);
 };
 
 // Get all proposals for a buyer's order
@@ -93,7 +88,7 @@ const getProposalsForOrder = async (req, res) => {
       return res.status(400).json({ error: "Order ID is required" });
     }
 
-    // Get actual buyer_id from buyers table
+    // Get actual buyer_id from buyers table (throws if missing)
     const buyerId = await getBuyerId(userId);
 
     // Verify buyer owns this order

@@ -69,12 +69,14 @@ const placeOrder = async (req, res) => {
     // 1. Fetch Buyer
     const { data: buyerData, error: buyerError } = await supabase
       .from("buyers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
     if (buyerError || !buyerData)
       return res.status(404).json({ message: "Buyer profile not found" });
+
+    const buyerId = buyerData.user_id;
 
     const {
       fruit_type,
@@ -99,7 +101,7 @@ const placeOrder = async (req, res) => {
       .from("placed_orders")
       .insert([
         {
-          buyer_id: buyerData.id,
+          buyer_id: buyerId,
           fruit_type,
           variant,
           quantity,
@@ -161,23 +163,24 @@ const selectFarmer = async (req, res) => {
       });
     }
 
-    // 2. Get buyer ID
+    // 2. Get buyer ID (uuid stored as user_id)
     const { data: buyerData, error: buyerError } = await supabase
       .from("buyers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
     if (buyerError || !buyerData) {
       return res.status(404).json({ message: "Buyer profile not found" });
     }
+    const buyerId = buyerData.user_id;
 
     // 3. Verify order belongs to this buyer and is in correct status
     const { data: order, error: orderError } = await supabase
       .from("placed_orders")
       .select("*")
       .eq("id", orderId)
-      .eq("buyer_id", buyerData.id)
+      .eq("buyer_id", buyerId)
       .single();
 
     if (orderError || !order) {
@@ -219,7 +222,7 @@ const selectFarmer = async (req, res) => {
           order_id: orderId,
           stock_id: stockId,
           farmer_id: farmerId,
-          buyer_id: buyerData.id,
+          buyer_id: buyerId,
           quantity_proposed: qty,
           status: "PENDING_BUYER", // Initial status - buyer needs to approve
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours to respond
@@ -259,9 +262,21 @@ const selectFarmer = async (req, res) => {
           .from("placed_orders")
           .update({ distance_km: dist })
           .eq("id", orderId);
+        // also update total_amount using current pricing
+        const unit = await fetchUnitPrice(
+          order.fruit_type,
+          order.variant,
+          order.grade,
+          new Date().toISOString().split("T")[0],
+        );
+        const breakdown = calculatePrice({ ...order, distance_km: dist }, unit);
+        await supabase
+          .from("placed_orders")
+          .update({ total_amount: breakdown.totalPrice })
+          .eq("id", orderId);
       }
     } catch (e) {
-      // ignore
+      // ignore errors
     }
 
     // TODO: Send notification to farmer (email, push, etc.)
@@ -287,20 +302,21 @@ const getOrderMatches = async (req, res) => {
     // 1. Get buyer ID
     const { data: buyerData } = await supabase
       .from("buyers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
     if (!buyerData) {
       return res.status(404).json({ message: "Buyer profile not found" });
     }
+    const buyerId = buyerData.user_id;
 
     // 2. Verify order belongs to buyer
     const { data: order } = await supabase
       .from("placed_orders")
       .select("*")
       .eq("id", orderId)
-      .eq("buyer_id", buyerData.id)
+      .eq("buyer_id", buyerId)
       .single();
 
     if (!order) {
@@ -395,19 +411,20 @@ const getMyOrders = async (req, res) => {
     // Get buyer ID
     const { data: buyerData, error: buyerError } = await supabase
       .from("buyers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
     if (buyerError || !buyerData) {
       return res.status(404).json({ message: "Buyer profile not found" });
     }
+    const buyerId = buyerData.user_id;
 
     // Get all orders for this buyer
     const { data: orders, error: ordersError } = await supabase
       .from("placed_orders")
       .select("*")
-      .eq("buyer_id", buyerData.id)
+      .eq("buyer_id", buyerId)
       .order("created_at", { ascending: false });
 
     if (ordersError) throw new Error(ordersError.message);
@@ -460,20 +477,21 @@ const getOrderDetails = async (req, res) => {
     // Get buyer ID
     const { data: buyerData, error: buyerError } = await supabase
       .from("buyers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
     if (buyerError || !buyerData) {
       return res.status(404).json({ message: "Buyer profile not found" });
     }
+    const buyerId = buyerData.user_id;
 
     // Get order
     const { data: orderData, error: orderError } = await supabase
       .from("placed_orders")
       .select("*")
       .eq("id", orderId)
-      .eq("buyer_id", buyerData.id)
+      .eq("buyer_id", buyerId)
       .single();
 
     if (orderError || !orderData) {

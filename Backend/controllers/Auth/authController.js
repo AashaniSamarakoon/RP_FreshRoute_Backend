@@ -1,159 +1,109 @@
-const bcrypt = require("bcryptjs");
-const { supabase } = require("../../utils/supabaseClient");
 const { generateToken } = require("../../Services/auth");
 const {
   registerAndEnrollUser,
 } = require("../../Services/blockchain/identityService");
 const { getContract } = require("../../Services/blockchain/contractService"); // Import the gateway bridge
+const { supabase } = require("../../utils/supabaseClient");
 
 // Signup
 const signup = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    // 1. Added nic to the destructuring
+    const { first_name, last_name, email, phone, nic, password, role } =
+      req.body;
 
-    if (!name || !email || !password || !role) {
+    if (!(email || phone) || !password || !role || !first_name || !last_name) {
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    const allowedRoles = ["farmer", "transporter", "buyer"];
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: "Invalid role" });
-    }
+    // 2. Normalize role for consistency
+    const normalizedRole = role.toUpperCase();
 
-    // 1. Check if email exists
-    const { data: existingUsers } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email);
+    const signUpArgs = {
+      email, // Always use email as the primary auth method
+      password,
+      options: {
+        data: {
+          first_name,
+          last_name,
+          role: role.toUpperCase(),
+          phone_number: phone, // Store it here instead
+          nic_number: nic || null,
+        },
+      },
+    };
 
-    if (existingUsers && existingUsers.length > 0) {
-      return res.status(409).json({ message: "Email already registered" });
-    }
+    // if (phone) signUpArgs.phone = phone;
+    // else signUpArgs.email = email;
 
-    // 2. Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
+    const { data: authData, error: authError } =
+      await supabase.auth.signUp(signUpArgs);
 
-    // 3. Insert user into Supabase
-    const { data: insertedUsers, error: insertError } = await supabase
-      .from("users")
-      .insert({
-        name,
-        email,
-        password_hash: passwordHash,
-        role,
-      })
-      .select("id, name, email, role");
+    if (authError) return res.status(409).json({ message: authError.message });
 
-    if (insertError || !insertedUsers) {
-      return res.status(500).json({ message: "Failed to create user" });
-    }
-
-    const user = insertedUsers[0];
-    console.log(`[Signup] User created with ID: ${user.id}`);
-
-    // 4. Create role-specific entry in DB
-    let roleTable =
-      role === "farmer"
-        ? "farmer"
-        : role === "buyer"
-          ? "buyers"
-          : "transporter";
-
-    console.log(
-      `[Signup] 📝 Creating role entry in table: '${roleTable}' for user ${user.id} (role: '${role}')`,
-    );
-    const { data: roleData, error: roleError } = await supabase
-      .from(roleTable)
-      .insert({ user_id: user.id })
-      .select();
-
-    console.log(`[Signup] Response from ${roleTable} insert:`, {
-      inserted: roleData ? roleData.length : 0,
-      error: roleError ? roleError.message : "none",
-    });
-
-    if (roleError) {
-      console.error(
-        `❌ [Signup] FAILED to insert into '${roleTable}': ${roleError.message}`,
-      );
-      await supabase.from("users").delete().eq("id", user.id);
-      return res.status(500).json({
-        message: `Failed to create ${role} entry`,
-        error: roleError.message,
-      });
-    }
-    console.log(
-      `✅ [Signup] Successfully created ${role} entry in '${roleTable}'`,
-    );
-
-    // ==========================================
-    // 5. BLOCKCHAIN IDENTITY (Fabric CA)
-    // ==========================================
-    console.log(`Registering ${role} on blockchain CA...`);
+    const user = authData.user;
     let ledgerStatus = "Pending";
     let identitySuccess = false;
+    const fullName = `${first_name} ${last_name}`;
 
+    // create a local profile row for the new account so the rest of the
+    // backend can look it up by user_id. use the admin client to avoid any
+    // RLS or permission issues (this runs on the server).
     try {
-      identitySuccess = await registerAndEnrollUser(user.id, role);
-      if (!identitySuccess) {
-        console.error(
-          "CRITICAL: Supabase user created but Blockchain identity failed.",
-        );
-        ledgerStatus = "Identity Failed";
+      if (normalizedRole === "BUYER") {
+        await supabase.from("buyers").insert({ user_id: user.id });
+      } else if (normalizedRole === "FARMER") {
+        await supabase.from("farmers").insert({ user_id: user.id });
+      } else if (normalizedRole === "TRANSPORTER") {
+        await supabase.from("transporters").insert({ user_id: user.id });
       }
+    } catch (profileErr) {
+      console.error("Failed to create role profile", profileErr);
+      // not fatal; the login can still succeed but later endpoints will
+      // report "profile not found" and the client can prompt the user to
+      // complete their account setup.
+    }
+
+    // 3. Blockchain Registration logic stays same, but uses normalizedRole
+    try {
+      identitySuccess = await registerAndEnrollUser(
+        user.id,
+        normalizedRole.toLowerCase(),
+      );
+      if (!identitySuccess) ledgerStatus = "Identity Failed";
     } catch (blockchainError) {
-      console.error(
-        "⚠️ Blockchain service unavailable:",
-        blockchainError.message,
-      );
-      console.log(
-        "ℹ️ User created in Supabase. Blockchain registration skipped.",
-      );
       ledgerStatus = "Blockchain Service Unavailable";
     }
 
     if (identitySuccess) {
-      // ==========================================
-      // 6. BLOCKCHAIN LEDGER (CouchDB Profile)
-      // ==========================================
       try {
-        console.log(
-          "Connecting to Gateway to register participant on Ledger...",
-        );
-
-        // IMPORTANT: Use admin identity for ledger operations
-        // CA-enrolled user identities are not compatible with cryptogen-based channel
-        // TODO: After migrating channel to CA certificates, switch to: getContract(user.id, "UserContract")
-        const adminIdentityId = `admin.${role === "farmer" ? "FarmerOrgMSP" : role === "buyer" ? "BuyerOrgMSP" : "TransporterOrgMSP"}`;
+        const adminIdentityId = `admin.${normalizedRole === "FARMER" ? "FarmerOrgMSP" : normalizedRole === "BUYER" ? "BuyerOrgMSP" : "TransporterOrgMSP"}`;
         const { contract, close } = await getContract(
           adminIdentityId,
           "UserContract",
         );
-
         try {
-          // Call RegisterParticipant(id, name, role)
-          await contract.submitTransaction("RegisterUser", user.id, name, role);
-          console.log("Successfully registered participant on CouchDB Ledger.");
+          await contract.submitTransaction(
+            "RegisterUser",
+            user.id,
+            fullName,
+            normalizedRole,
+          );
           ledgerStatus = "Registered on Ledger";
         } catch (txError) {
-          console.error("Ledger Transaction Failed:", txError);
           ledgerStatus = "Identity Created, Ledger Failed";
         } finally {
-          close(); // Always close the gateway connection
+          close();
         }
       } catch (gatewayError) {
-        console.error("Gateway Connection Failed:", gatewayError);
         ledgerStatus = "Gateway Error";
       }
     }
 
     const token = generateToken(user);
-
-    res.status(201).json({
-      token,
-      user,
-      blockchainStatus: ledgerStatus,
-    });
+    return res
+      .status(201)
+      .json({ token, user, blockchainStatus: ledgerStatus });
   } catch (err) {
     console.error("Signup error:", err);
     res.status(500).json({ message: "Server error" });
@@ -163,39 +113,48 @@ const signup = async (req, res) => {
 // Login
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body; // 'identifier' can be Email, Phone, or NIC
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    // 1. Find user by email
-    const { data: users, error } = await supabase
+    // 1. Identity Lookup: Find the user's primary email using the unified identifier
+    const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("id, name, email, password_hash, role")
-      .eq("email", email);
+      .select("email, role")
+      .or(
+        `email.eq.${identifier},phone.eq.${identifier},nic_number.eq.${identifier}`,
+      )
+      .single();
 
-    if (error || !users || users.length === 0) {
+    if (profileError || !profile) {
+      return res.status(401).json({ message: "Account not found" });
+    }
+
+    // 2. Use the found email to sign in via Supabase
+    const { data: authData, error: authError } =
+      await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password,
+      });
+
+    if (authError || !authData.session) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const user = users[0];
+    const user = {
+      ...authData.user,
+      role: profile.role.toLowerCase(),
+    };
 
-    // 2. Check password
-    const isValidPassword = await bcrypt.compare(password, user.password_hash);
-    if (!isValidPassword) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    // 3. Generate token
-    const token = generateToken(user);
+    const token = authData.session.access_token;
     res.json({ token, user });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
-
 // Get Me (current user)
 const getMe = async (req, res) => {
   try {
