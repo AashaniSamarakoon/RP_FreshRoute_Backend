@@ -3,17 +3,18 @@ const { getContract } = require("../../Services/blockchain/contractService");
 const axios = require("axios");
 
 // Helper: Get transporter ID from user ID
+// transporter table only stores user_id so we return that value directly
 const getTransporterId = async (userId) => {
   const { data: transporterData, error: transporterError } = await supabase
     .from("transporter")
-    .select("id")
+    .select("user_id")
     .eq("user_id", userId)
     .single();
 
   if (transporterError || !transporterData) {
     throw new Error("No transporter profile found.");
   }
-  return transporterData.id;
+  return transporterData.user_id;
 };
 
 // POST: Mark order as delivered (after pickup and transit)

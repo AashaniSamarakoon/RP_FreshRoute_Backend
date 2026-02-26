@@ -24,7 +24,7 @@ const getBuyerId = async (userId) => {
 // existence and return it.
 const getFarmerId = async (userId) => {
   const { data: farmerData, error: farmerError } = await supabase
-    .from("farmer")
+    .from("farmers")
     .select("user_id")
     .eq("user_id", userId)
     .single();
@@ -52,30 +52,18 @@ const resolveBuyerId = async (id) => {
 };
 
 // Helper: Resolve farmer ID (accepts either user_id or farmer_id)
+// Since the farmers table only stores user_id, treat both cases the same.
 const resolveFarmerId = async (id) => {
-  // First, check if this ID exists in farmer table directly
-  const { data: directFarmer } = await supabase
-    .from("farmer")
-    .select("id")
-    .eq("id", id)
-    .single();
-
-  if (directFarmer) {
-    return id; // It's already a farmer_id
-  }
-
-  // If not, try to find it as a user_id
-  const { data: farmerData } = await supabase
-    .from("farmer")
-    .select("id")
+  const { data: farmerData, error } = await supabase
+    .from("farmers")
+    .select("user_id")
     .eq("user_id", id)
     .single();
 
-  if (farmerData) {
-    return farmerData.id; // Convert user_id to farmer_id
+  if (error || !farmerData) {
+    throw new Error(`No farmer found with the provided ID (${id})`);
   }
-
-  throw new Error(`No farmer found with the provided ID (${id})`);
+  return farmerData.user_id;
 };
 
 // Get all proposals for a buyer's order
@@ -125,17 +113,11 @@ const getProposalsForOrder = async (req, res) => {
           image_url,
           image_hash,
           farmer:farmer_id (
-            id,
+            user_id,
             reputation,
             latitude,
             longitude,
-            location,
-            user:user_id (
-              id,
-              name,
-              email,
-              phone
-            )
+            location
           )
         )
       `,
@@ -203,10 +185,7 @@ const getAllProposals = async (req, res) => {
         stock:stock_id (
           id,
           farmer:farmer_id (
-            user:user_id (
-              name,
-              phone
-            )
+            /* user details omitted to avoid schema cache ambiguity */
           )
         ),
         order:order_id (
@@ -415,15 +394,9 @@ const getProposalsByBuyerId = async (req, res) => {
           price_per_kg,
           estimated_harvest_date,
           farmer:farmer_id (
-            id,
+            user_id,
             reputation,
-            location,
-            user:user_id (
-              id,
-              name,
-              email,
-              phone
-            )
+            location
           )
         ),
         order:order_id (

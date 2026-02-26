@@ -34,9 +34,9 @@ async function ensureDistance(order) {
     order.selected_farmer_id
   ) {
     const { data: farmerInfo } = await supabase
-      .from("farmer")
+      .from("farmers")
       .select("latitude, longitude")
-      .eq("id", order.selected_farmer_id)
+      .eq("user_id", order.selected_farmer_id)
       .single();
     if (
       farmerInfo &&
@@ -247,9 +247,9 @@ const selectFarmer = async (req, res) => {
     // compute distance between farmer and delivery point if possible
     try {
       const { data: farmerInfo } = await supabase
-        .from("farmer")
+        .from("farmers")
         .select("latitude, longitude")
-        .eq("id", farmerId)
+        .eq("user_id", farmerId)
         .single();
       if (farmerInfo && order.latitude && order.longitude) {
         const dist = calculateDistanceKm(
@@ -589,28 +589,27 @@ const getOrderDetails = async (req, res) => {
 
     let farmer = null;
     if (orderData.selected_farmer_id) {
+      // fetch farmer record to confirm it exists
       const { data: farmerData, error: farmerError } = await supabase
-        .from("farmer")
-        .select(
-          `
-          id,
-          user_id,
-          users:user_id (
-            name,
-            phone,
-            email
-          )
-        `,
-        )
-        .eq("id", orderData.selected_farmer_id)
+        .from("farmers")
+        .select("user_id")
+        .eq("user_id", orderData.selected_farmer_id)
         .single();
 
-      if (!farmerError && farmerData) {
-        const userData = farmerData.users;
+      if (farmerError || !farmerData) {
+        // farmer record missing; leave farmer null
+      } else {
+        // separately query users table for profile info
+        const { data: userInfo } = await supabase
+          .from("users")
+          .select("name,phone,email")
+          .eq("id", orderData.selected_farmer_id)
+          .single();
+
         farmer = {
-          id: farmerData.id,
-          name: userData?.name || "Unknown",
-          phone: userData?.phone || "",
+          id: orderData.selected_farmer_id,
+          name: userInfo?.name || "Unknown",
+          phone: userInfo?.phone || "",
           rating: undefined,
           location: undefined,
         };

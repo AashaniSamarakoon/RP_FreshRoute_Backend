@@ -558,16 +558,10 @@ const runMatchingAlgorithm = async (orderId) => {
         estimated_harvest_date,
         status,
         farmer:farmer_id (
-          id,
+          user_id,
           reputation,
           latitude,
-          longitude,
-          user:user_id (
-            id,
-            name,
-            email,
-            phone
-          )
+          longitude
         )
       `,
       )
@@ -594,7 +588,7 @@ const runMatchingAlgorithm = async (orderId) => {
     // --- Step 3: Prepare Candidates ---
     const candidates = pool.map((item) => ({
       stock_id: item.id,
-      farmer_id: item.farmer.id,
+      farmer_id: item.farmer.user_id, // now stored as user_id
       available_qty: item.quantity,
       estimated_harvest_date: item.estimated_harvest_date,
       reputation: item.farmer.reputation || 2.5, // Default neutral reputation

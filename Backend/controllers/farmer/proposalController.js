@@ -5,7 +5,7 @@ const { getContract } = require("../../Services/blockchain/contractService");
 // farmer table only stores user_id; this returns the UUID directly.
 const getFarmerId = async (userId) => {
   const { data: farmerData, error: farmerError } = await supabase
-    .from("farmer")
+    .from("farmers")
     .select("user_id")
     .eq("user_id", userId)
     .single();
@@ -188,9 +188,9 @@ const acceptProposal = async (req, res) => {
     if (orderRow) {
       // compute distance between farmer and delivery point
       const { data: farmerInfo } = await supabase
-        .from("farmer")
+        .from("farmers")
         .select("latitude, longitude")
-        .eq("id", farmerId)
+        .eq("user_id", farmerId)
         .single();
       if (
         farmerInfo &&
