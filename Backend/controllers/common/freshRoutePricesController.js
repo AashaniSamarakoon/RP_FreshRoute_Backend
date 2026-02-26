@@ -1,5 +1,5 @@
 /**
- * Endpoint for FreshRoute Graded Prices
+ * Controller for FreshRoute Graded Prices
  * Returns price tiers (A, B, C, D) for each fruit for today
  */
 const { supabase } = require("../../utils/supabaseClient");
@@ -40,7 +40,7 @@ async function getFreshRoutePrices(req, res) {
           lastUpdated: p.updated_at,
         };
       }
-      
+
       fruitPrices[p.fruit_id].grades[p.grade] = {
         grade: p.grade,
         price: p.price,

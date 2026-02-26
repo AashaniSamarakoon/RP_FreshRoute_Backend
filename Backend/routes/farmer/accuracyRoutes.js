@@ -1,3 +1,4 @@
+
 /**
  * Accuracy Insights Routes
  * Endpoints for analyzing forecast accuracy against historical prices

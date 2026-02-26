@@ -15,7 +15,8 @@ const {
   createFeedback,
   getHistoricalPrices,
 } = require("../../controllers/farmer/farmerController");
-const { getFreshRoutePrices } = require("../../routes/farmer/freshRoutePricesEndpoint");
+const { getFreshRoutePrices } = require("../../controllers/common/freshRoutePricesController");
+const freshRoutePricesRouter = require("../common/freshRoutePricesEndpoint");
 const { getSMSPreferences, updateSMSPreferences } = require("../../controllers/farmer/smsController");
 const {
   getNotifications: getNotificationsNew,
@@ -43,7 +44,7 @@ router.get("/live-market", getLiveMarketPrices);
 router.get("/prices/daily", getDailyPrices);
 router.get("/prices/daily-v2", getDailyPricesV2);
 router.get("/prices/history", getHistoricalPrices);
-router.get("/prices/freshroute", getFreshRoutePrices);
+router.use("/prices/freshroute", freshRoutePricesRouter);
 
 
 // Accuracy
