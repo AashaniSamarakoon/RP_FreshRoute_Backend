@@ -2,22 +2,21 @@ const express = require("express");
 const {
   getDashboard,
   getHomeSummary,
-  getForecast,
-  getForecast7Day,
   getLiveMarketPrices,
   getDailyPrices,
   getDailyPricesV2,
   getAccuracyInsights,
-  getFruitForecast,
+  // getFruitForecast moved to common controller
   getNotifications,
   markNotificationRead,
   getFeedback,
   createFeedback,
   getHistoricalPrices,
 } = require("../../controllers/farmer/farmerController");
-const { getFreshRoutePrices } = require("../../controllers/common/freshRoutePricesController");
-const freshRoutePricesRouter = require("../common/freshRoutePricesEndpoint");
-const { getSMSPreferences, updateSMSPreferences } = require("../../controllers/farmer/smsController");
+const {
+  getSMSPreferences,
+  updateSMSPreferences,
+} = require("../../controllers/farmer/smsController");
 const {
   getNotifications: getNotificationsNew,
   getNotificationById,
@@ -34,18 +33,13 @@ const router = express.Router();
 router.get("/dashboard", getDashboard);
 router.get("/home", getHomeSummary);
 
-// Forecasts
-router.get("/forecast", getForecast);
-router.get("/forecast/7day", getForecast7Day);
-router.get("/forecast/fruit", getFruitForecast);
+// Forecasts – handled by shared router mounted globally
 
 // Market & Prices
 router.get("/live-market", getLiveMarketPrices);
 router.get("/prices/daily", getDailyPrices);
 router.get("/prices/daily-v2", getDailyPricesV2);
 router.get("/prices/history", getHistoricalPrices);
-router.use("/prices/freshroute", freshRoutePricesRouter);
-
 
 // Accuracy
 router.get("/accuracy", getAccuracyInsights);

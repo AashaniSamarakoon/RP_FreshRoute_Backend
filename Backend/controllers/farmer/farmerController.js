@@ -53,100 +53,6 @@ async function getDashboard(req, res) {
   }
 }
 
-// ============ 7-DAY FORECAST ============
-async function getForecast7Day(req, res) {
-  try {
-    const { fruit = "Mango", target = "demand" } = req.query; // target: 'demand' | 'price'
-    const today = todayISO();
-    const inSevenDays = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-
-    // Attempt to read from simplified forecast table: fruit, target, date, forecast_value
-    try {
-      const { data: simpleRows, error: simpleErr } = await supabase
-        .from("forecasts")
-        .select("fruit, target, date, forecast_value")
-        .ilike("fruit", `%${fruit}%`)
-        .eq("target", String(target).toLowerCase())
-        .gte("date", today)
-        .lte("date", inSevenDays)
-        .order("date", { ascending: true });
-
-      if (simpleErr) {
-        console.warn("Simplified forecast query error", simpleErr.message);
-        return res.json({ days: [], message: simpleErr.message });
-      }
-
-      if (simpleRows && simpleRows.length > 0) {
-        let prev = null;
-        const days = simpleRows.map((row) => {
-          const valueNum = typeof row.forecast_value === "number" ? row.forecast_value : Number(row.forecast_value);
-          let trend = "stable";
-          if (prev !== null && typeof valueNum === "number") {
-            trend = valueNum > prev ? "up" : valueNum < prev ? "down" : "stable";
-          }
-          prev = valueNum;
-          return {
-            day: new Date(row.date).toLocaleDateString("en-US", { weekday: "long" }),
-            trend,
-            trendText: trend === "up" ? "Increase" : trend === "down" ? "Decrease" : "Stable",
-            value: typeof valueNum === "number" ? valueNum.toFixed(2) : "N/A",
-            unit: target === "price" ? "Rs." : "units",
-          };
-        });
-
-        return res.json({ days });
-      }
-
-      // Fallback: try alternate target from same table
-      const altTarget = String(target).toLowerCase() === "price" ? "demand" : "price";
-      const { data: altRows, error: altErr } = await supabase
-        .from("forecasts")
-        .select("fruit, target, date, forecast_value")
-        .ilike("fruit", `%${fruit}%`)
-        .eq("target", altTarget)
-        .gte("date", today)
-        .lte("date", inSevenDays)
-        .order("date", { ascending: true });
-
-      if (altErr) {
-        console.warn("Alternate target query error", altErr.message);
-        return res.json({ days: [], message: altErr.message });
-      }
-
-      if (altRows && altRows.length > 0) {
-        let prevAlt = null;
-        const daysAlt = altRows.map((row) => {
-          const valueNum = typeof row.forecast_value === "number" ? row.forecast_value : Number(row.forecast_value);
-          let trend = "stable";
-          if (prevAlt !== null && typeof valueNum === "number") {
-            trend = valueNum > prevAlt ? "up" : valueNum < prevAlt ? "down" : "stable";
-          }
-          prevAlt = valueNum;
-          return {
-            day: new Date(row.date).toLocaleDateString("en-US", { weekday: "long" }),
-            trend,
-            trendText: trend === "up" ? "Increase" : trend === "down" ? "Decrease" : "Stable",
-            value: typeof valueNum === "number" ? valueNum.toFixed(2) : "N/A",
-            unit: altTarget === "price" ? "Rs." : "units",
-          };
-        });
-
-        return res.json({ days: daysAlt });
-      }
-
-      // No rows in either target for this window
-      return res.json({ days: [] });
-    } catch (e) {
-      console.warn("Simplified forecast route error", e.message);
-      // If simplified path fails unexpectedly, return empty set instead of 500
-      return res.json({ days: [], message: e.message });
-    }
-  } catch (err) {
-    console.error("Forecast error", err);
-    // Return 200 with an empty set so the client does not break while we surface the message
-    res.status(200).json({ days: [], message: err?.message || "Failed to fetch forecast" });
-  }
-}
 
 // ============ LIVE MARKET PRICES (Dambulla) ============
 async function getLiveMarketPrices(req, res) {
@@ -380,34 +286,6 @@ async function getAccuracyInsights(req, res) {
   }
 }
 
-// ============ FRUIT-SPECIFIC FORECAST ============
-async function getFruitForecast(req, res) {
-  try {
-    const { fruit = "Mango" } = req.query;
-    const today = todayISO();
-    const inSevenDays = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-
-    const { data, error } = await supabase
-      .from("forecasts")
-      .select("fruit, target, date, forecast_value")
-      .ilike("fruit", `%${fruit}%`)
-      .gte("date", today)
-      .lte("date", inSevenDays)
-      .order("date", { ascending: true });
-
-    if (error) throw error;
-
-    res.json({
-      fruit,
-      forecast: data || [],
-      peakDay: data?.[0]?.date || null,
-      peakDemand: data?.[0]?.forecast_value || null,
-    });
-  } catch (err) {
-    console.error("Fruit forecast error", err);
-    res.status(500).json({ message: "Failed to fetch fruit forecast" });
-  }
-}
 
 async function getHomeSummary(req, res) {
   try {
@@ -458,38 +336,6 @@ async function getHomeSummary(req, res) {
   }
 }
 
-async function getForecast(req, res) {
-  try {
-    const { fruit = "Mango", target = "demand" } = req.query;
-
-    const { data, error } = await supabase
-      .from("forecasts")
-      .select("fruit, target, date, forecast_value")
-      .ilike("fruit", `%${fruit}%`)
-      .eq("target", String(target).toLowerCase())
-      .gte("date", todayISO())
-      .lte("date", new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10))
-      .order("date", { ascending: true });
-
-    if (error) {
-      console.error("Forecast error", error);
-      return res.status(500).json({ message: "Failed to fetch forecast", error: error.message });
-    }
-
-    const days = (data || []).map((d) => ({
-      day: new Date(d.date).toLocaleDateString("en-US", { weekday: "long" }),
-      trend: "stable",
-      trendText: "Stable",
-      value: typeof d.forecast_value === "number" ? d.forecast_value.toFixed(2) : "N/A",
-      unit: String(target).toLowerCase() === "price" ? "Rs." : "units",
-    }));
-
-    res.json({ days });
-  } catch (err) {
-    console.error("Forecast server error", err);
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
-}
 
 async function getDailyPrices(req, res) {
   try {
@@ -652,13 +498,10 @@ async function createFeedback(req, res) {
 module.exports = {
   getDashboard,
   getHomeSummary,
-  getForecast,
-  getForecast7Day,
   getLiveMarketPrices,
   getDailyPrices,
   getDailyPricesV2,
   getAccuracyInsights,
-  getFruitForecast,
   getNotifications,
   markNotificationRead,
   getFeedback,

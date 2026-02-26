@@ -27,13 +27,15 @@ const {
   updateFreshRoutePrices,
 } = require("./Services/farmer/freshRoutePriceUpdater");
 const { archiveOldPrices } = require("./Services/farmer/priceArchiver");
-const { getFreshRoutePrices } = require("./controllers/common/freshRoutePricesController");
+// pricing endpoint is handled by its own router
+const freshRoutePricesRouter = require("./routes/common/freshRoutePricesEndpoint");
 const {
   calculateAccuracyInsights,
 } = require("./Services/farmer/accuracyInsights");
 const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
 const fruitsRoutes = require("./routes/common/fruitsRoutes");
+const forecastRouter = require("./routes/common/forecastRoutes");
 const predictStockRoutes = require("./routes/farmer/predictStockRoutes");
 const orderRoutes = require("./routes/buyer/orderRoutes");
 const matchingRoutes = require("./routes/buyer/matchingRoutes");
@@ -84,10 +86,12 @@ app.get("/health", (req, res) => {
 });
 
 // Middleware to redirect frontend API calls that use wrong paths
-// Frontend calls /forecast/7day instead of /api/farmer/forecast/7day
+// Frontend sometimes omits the "/api" prefix; instead of assuming farmer we
+// simply add "/api". The individual routers will then apply any required
+// role checks (farmer/buyer) or, in the case of common endpoints, accept
+// any authenticated user.
 app.use((req, res, next) => {
-  // Check if this looks like a farmer API call but missing /api/farmer prefix
-  const forecastRoutes = [
+  const prefixable = [
     "/forecast",
     "/forecast/7day",
     "/forecast/fruit",
@@ -98,14 +102,11 @@ app.use((req, res, next) => {
     "/home",
     "/accuracy",
   ];
-  const isFarmerRoute = forecastRoutes.some((route) =>
-    req.path.startsWith(route),
-  );
-
-  if (isFarmerRoute && !req.path.startsWith("/api/")) {
-    // Redirect the request to /api/farmer + path
-    req.url = `/api/farmer${req.url}`;
-    req.path = `/api/farmer${req.path}`;
+  const missingApi = !req.path.startsWith("/api/");
+  const matches = prefixable.some((route) => req.path.startsWith(route));
+  if (matches && missingApi) {
+    req.url = `/api${req.url}`;
+    req.path = `/api${req.path}`;
   }
   next();
 });
@@ -147,13 +148,11 @@ app.use(
 // Buyer matching (view/trigger proposals from matching algorithm)
 app.use("/api/buyer/matching", matchingRoutes);
 
-// Buyer FreshRoute prices (same payload as farmer)
-app.get(
-  "/api/buyer/prices/freshroute",
-  authMiddleware,
-  requireRole("buyer"),
-  getFreshRoutePrices,
-);
+// FreshRoute prices are a common endpoint accessible by any authenticated user
+app.use("/api/prices/freshroute", authMiddleware, freshRoutePricesRouter);
+
+// shared forecast endpoint (allows any authenticated user) mounted at fixed path
+app.use("/api/forecast", authMiddleware, forecastRouter);
 
 // Auth routes
 app.use("/api/auth", authRoutes);

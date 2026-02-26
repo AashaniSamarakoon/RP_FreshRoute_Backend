@@ -12,7 +12,6 @@ const {
 const router = express.Router();
 
 router.get("/home", getHomeSummary);
-router.get("/forecast", getForecast);
 router.get("/prices/daily", getDailyPrices);
 router.get("/notifications", getNotifications);
 router.patch("/notifications/:id/read", markNotificationRead);
