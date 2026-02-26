@@ -14,7 +14,8 @@ const {
 const { startSMSScheduler, triggerSMSNow } = require("./Services/farmer/smsScheduler");
 const { startDambullaScheduler } = require("./Services/farmer/dambullaScheduler");
 const { initializeTodaysPrices, updateFreshRoutePrices } = require("./Services/farmer/freshRoutePriceUpdater");
-const { getFreshRoutePrices } = require("./routes/farmer/freshRoutePricesEndpoint");
+const { archiveOldPrices } = require("./Services/farmer/priceArchiver");
+const { getFreshRoutePrices } = require("./controllers/common/freshRoutePricesController");
 const { calculateAccuracyInsights } = require("./Services/farmer/accuracyInsights");
 const authRoutes = require("./routes/Auth/authRoutes");
 const transporterRoutes = require("./routes/transporter/transporterRoutes");
@@ -321,6 +322,17 @@ cron.schedule("0 0 * * *", async () => {
 console.log(
   "[Cron] Scheduled jobs initialized: Batch matching (every 2h), Expiry check (daily)"
 );
+
+// Archive previous-day market prices on startup
+(async () => {
+  try {
+    console.log("[Init] Archiving previous-day market prices...");
+    const result = await archiveOldPrices();
+    console.log("[Init] Price archive result:", result);
+  } catch (err) {
+    console.warn("[Init] Warning archiving prices:", err.message);
+  }
+})();
 
 // Initialize today's FreshRoute prices on startup
 (async () => {
