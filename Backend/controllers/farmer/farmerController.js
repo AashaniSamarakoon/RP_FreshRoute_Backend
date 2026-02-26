@@ -1,5 +1,7 @@
 const { supabase } = require("../../utils/supabaseClient");
-const { computeFreshRoutePrice } = require("../../Services/farmer/pricingService");
+const {
+  computeFreshRoutePrice,
+} = require("../../Services/farmer/pricingService");
 
 const HOME_LIMIT = 3;
 
@@ -53,18 +55,21 @@ async function getDashboard(req, res) {
   }
 }
 
-
 // ============ LIVE MARKET PRICES (Dambulla) ============
 async function getLiveMarketPrices(req, res) {
   try {
     const { location = "" } = req.query;
     const today = todayISO();
-    const tomorrow = new Date(new Date(today).getTime() + 86400000).toISOString().split("T")[0];
+    const tomorrow = new Date(new Date(today).getTime() + 86400000)
+      .toISOString()
+      .split("T")[0];
 
     // 1) Try to fetch today's prices using timestamp range
     let query = supabase
       .from("economic_center_prices")
-      .select("fruit_id, fruit_name, variety, min_price, max_price, unit, captured_at, economic_center")
+      .select(
+        "fruit_id, fruit_name, variety, min_price, max_price, unit, captured_at, economic_center",
+      )
       .gte("captured_at", `${today}T00:00:00Z`)
       .lt("captured_at", `${tomorrow}T00:00:00Z`)
       .order("captured_at", { ascending: false })
@@ -83,7 +88,9 @@ async function getLiveMarketPrices(req, res) {
       usedFallback = true;
       query = supabase
         .from("economic_center_prices")
-        .select("fruit_id, fruit_name, variety, min_price, max_price, unit, captured_at, economic_center")
+        .select(
+          "fruit_id, fruit_name, variety, min_price, max_price, unit, captured_at, economic_center",
+        )
         .order("captured_at", { ascending: false })
         .limit(50);
       const fallback = await query;
@@ -96,29 +103,44 @@ async function getLiveMarketPrices(req, res) {
       .from("fruits")
       .select("id, name, image_url");
 
-    const imageMap = Object.fromEntries((fruitImages || []).map(f => [f.name, f.image_url]));
+    const imageMap = Object.fromEntries(
+      (fruitImages || []).map((f) => [f.name, f.image_url]),
+    );
 
     // Map to frontend format with demand level mock
-    const fruits = (data || []).map(p => {
+    const fruits = (data || []).map((p) => {
       const minPrice = p.min_price;
       const maxPrice = p.max_price;
-      const avgPrice = minPrice != null && maxPrice != null ? (Number(minPrice) + Number(maxPrice)) / 2 : null;
-      
+      const avgPrice =
+        minPrice != null && maxPrice != null
+          ? (Number(minPrice) + Number(maxPrice)) / 2
+          : null;
+
       // Format price display - show range if min != max, otherwise single price
-      const priceDisplay = minPrice === maxPrice || maxPrice == null
-        ? `Rs. ${Number(minPrice ?? avgPrice ?? 0).toFixed(2)}`
-        : `Rs. ${Number(minPrice).toFixed(2)}-${Number(maxPrice).toFixed(2)}`;
-      
+      const priceDisplay =
+        minPrice === maxPrice || maxPrice == null
+          ? `Rs. ${Number(minPrice ?? avgPrice ?? 0).toFixed(2)}`
+          : `Rs. ${Number(minPrice).toFixed(2)}-${Number(maxPrice).toFixed(2)}`;
+
       return {
         name: p.fruit_name,
-        emoji: p.fruit_name === "Mango" ? "🥭" : p.fruit_name === "Banana" ? "🍌" : "🍍",
-        image: imageMap[p.fruit_name] || `https://via.placeholder.com/100?text=${p.fruit_name}`,
+        emoji:
+          p.fruit_name === "Mango"
+            ? "🥭"
+            : p.fruit_name === "Banana"
+              ? "🍌"
+              : "🍍",
+        image:
+          imageMap[p.fruit_name] ||
+          `https://via.placeholder.com/100?text=${p.fruit_name}`,
         price: priceDisplay,
-        priceRange: minPrice === maxPrice ? null : { min: minPrice, max: maxPrice },
+        priceRange:
+          minPrice === maxPrice ? null : { min: minPrice, max: maxPrice },
         avgPrice: avgPrice,
         unit: `/ ${p.unit}`,
         status: avgPrice > 300 ? "High" : avgPrice > 150 ? "Medium" : "Low",
-        statusColor: avgPrice > 300 ? "#e8f4f0" : avgPrice > 150 ? "#fef9c3" : "#fee2e2",
+        statusColor:
+          avgPrice > 300 ? "#e8f4f0" : avgPrice > 150 ? "#fef9c3" : "#fee2e2",
       };
     });
 
@@ -139,11 +161,15 @@ async function getHistoricalPrices(req, res) {
   try {
     const { days = 30, location = "", fruit = "" } = req.query;
     const daysBack = Math.min(Math.max(parseInt(days) || 30, 1), 365); // 1-365 days
-    const startDate = new Date(Date.now() - daysBack * 86400000).toISOString().split("T")[0];
+    const startDate = new Date(Date.now() - daysBack * 86400000)
+      .toISOString()
+      .split("T")[0];
 
     let query = supabase
       .from("historical_market_prices")
-      .select("fruit_id, fruit_name, variety, min_price, max_price, unit, captured_at, economic_center")
+      .select(
+        "fruit_id, fruit_name, variety, min_price, max_price, unit, captured_at, economic_center",
+      )
       .gte("captured_at", `${startDate}T00:00:00Z`)
       .order("captured_at", { ascending: false })
       .limit(200);
@@ -161,14 +187,23 @@ async function getHistoricalPrices(req, res) {
 
     // Group by date and fruit for trend analysis
     const grouped = {};
-    (data || []).forEach(p => {
+    (data || []).forEach((p) => {
       const date = p.captured_at.split("T")[0];
       const key = `${p.fruit_name}`;
       if (!grouped[key]) grouped[key] = [];
       const minPrice = p.min_price;
       const maxPrice = p.max_price;
-      const avgPrice = minPrice != null && maxPrice != null ? (Number(minPrice) + Number(maxPrice)) / 2 : null;
-      grouped[key].push({ date, price: avgPrice, unit: p.unit, min_price: minPrice, max_price: maxPrice });
+      const avgPrice =
+        minPrice != null && maxPrice != null
+          ? (Number(minPrice) + Number(maxPrice)) / 2
+          : null;
+      grouped[key].push({
+        date,
+        price: avgPrice,
+        unit: p.unit,
+        min_price: minPrice,
+        max_price: maxPrice,
+      });
     });
 
     res.json({
@@ -203,13 +238,14 @@ async function getDailyPricesV2(req, res) {
     if (error) throw error;
 
     // Format for frontend
-    const fruits = (allFruits || []).map(f => {
-      const priceData = prices?.find(p => p.fruit_id === f.id);
-      
+    const fruits = (allFruits || []).map((f) => {
+      const priceData = prices?.find((p) => p.fruit_id === f.id);
+
       if (!priceData) {
         return {
           name: f.name,
-          image: f.image_url || `https://via.placeholder.com/100?text=${f.name}`,
+          image:
+            f.image_url || `https://via.placeholder.com/100?text=${f.name}`,
           price: "N/A",
           unit: "/ kg",
           status: "N/A",
@@ -217,20 +253,25 @@ async function getDailyPricesV2(req, res) {
           deltaColor: "#6b7280",
         };
       }
-      
+
       const minPrice = priceData.min_price;
       const maxPrice = priceData.max_price;
-      const avgPrice = minPrice != null && maxPrice != null ? (Number(minPrice) + Number(maxPrice)) / 2 : null;
-      
-      const priceDisplay = minPrice === maxPrice || maxPrice == null
-        ? `Rs. ${Number(minPrice ?? avgPrice ?? 0).toFixed(2)}`
-        : `Rs. ${Number(minPrice).toFixed(2)}-${Number(maxPrice).toFixed(2)}`;
-      
+      const avgPrice =
+        minPrice != null && maxPrice != null
+          ? (Number(minPrice) + Number(maxPrice)) / 2
+          : null;
+
+      const priceDisplay =
+        minPrice === maxPrice || maxPrice == null
+          ? `Rs. ${Number(minPrice ?? avgPrice ?? 0).toFixed(2)}`
+          : `Rs. ${Number(minPrice).toFixed(2)}-${Number(maxPrice).toFixed(2)}`;
+
       return {
         name: f.name,
         variety: priceData.variety || f.variety || "Standard",
         price: priceDisplay,
-        priceRange: minPrice === maxPrice ? null : { min: minPrice, max: maxPrice },
+        priceRange:
+          minPrice === maxPrice ? null : { min: minPrice, max: maxPrice },
         avgPrice: avgPrice,
         image: f.image_url || `https://via.placeholder.com/100?text=${f.name}`,
         unit: `/ ${priceData.unit}`,
@@ -270,9 +311,24 @@ async function getAccuracyInsights(req, res) {
     };
 
     const metrics = [
-      { value: 92, label: "Overall Accuracy", trend: "up", change: "+4% this week" },
-      { value: 88, label: "Price Prediction", trend: "up", change: "+2% this week" },
-      { value: 95, label: "Demand Forecast", trend: "stable", change: "Stable" },
+      {
+        value: 92,
+        label: "Overall Accuracy",
+        trend: "up",
+        change: "+4% this week",
+      },
+      {
+        value: 88,
+        label: "Price Prediction",
+        trend: "up",
+        change: "+2% this week",
+      },
+      {
+        value: 95,
+        label: "Demand Forecast",
+        trend: "stable",
+        change: "Stable",
+      },
     ];
 
     res.json({
@@ -286,12 +342,14 @@ async function getAccuracyInsights(req, res) {
   }
 }
 
-
 async function getHomeSummary(req, res) {
   try {
     const currentDate = todayISO();
 
-    const [{ data: forecastData, error: forecastError }, { data: alerts, error: alertsError }] = await Promise.all([
+    const [
+      { data: forecastData, error: forecastError },
+      { data: alerts, error: alertsError },
+    ] = await Promise.all([
       supabase
         .from("forecasts")
         .select("fruit, target, date, forecast_value")
@@ -325,17 +383,19 @@ async function getHomeSummary(req, res) {
     const quickMetrics = {
       openAlerts: alerts?.length || 0,
       trackedFruits: forecastData?.length || 0,
-      avgConfidence:
-        forecastData?.length ? null : null,
+      avgConfidence: forecastData?.length ? null : null,
     };
 
-    res.json({ spotlight: spotlightCard, quickMetrics, forecasts: forecastData || [] });
+    res.json({
+      spotlight: spotlightCard,
+      quickMetrics,
+      forecasts: forecastData || [],
+    });
   } catch (err) {
     console.error("Home error", err);
     res.status(500).json({ message: "Server error" });
   }
 }
-
 
 async function getDailyPrices(req, res) {
   try {
@@ -344,15 +404,20 @@ async function getDailyPrices(req, res) {
       return res.status(400).json({ message: "market_id is required" });
     }
 
-    const [{ data: marketPrices, error: marketErr }, { data: frPrices, error: frErr }] = await Promise.all([
+    const [
+      { data: marketPrices, error: marketErr },
+      { data: frPrices, error: frErr },
+    ] = await Promise.all([
       supabase
         .from("latest_market_prices")
-        .select("market_id, fruit_id, price_per_unit, demand_level, demand_trend, captured_at, fruits(name, variety, image_url)")
+        .select(
+          "market_id, fruit_id, price_per_unit, demand_level, demand_trend, captured_at, fruits(name, variety, image_url)",
+        )
         .eq("market_id", market_id),
       supabase
         .from("latest_freshroute_prices")
         .select(
-          "market_id, fruit_id, target_date, recommended_price, supply_kg, orders_kg, base_cost, logistics_cost, margin_pct, risk_buffer_pct, rationale, fruits(name, variety)"
+          "market_id, fruit_id, target_date, recommended_price, supply_kg, orders_kg, base_cost, logistics_cost, margin_pct, risk_buffer_pct, rationale, fruits(name, variety)",
         )
         .eq("market_id", market_id),
     ]);
@@ -404,7 +469,9 @@ async function getNotifications(req, res) {
     const { category } = req.query;
     let query = supabase
       .from("notifications")
-      .select("id, title, body, category, severity, action_url, read_at, created_at")
+      .select(
+        "id, title, body, category, severity, action_url, read_at, created_at",
+      )
       .eq("user_id", req.user.id)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -450,7 +517,10 @@ async function markNotificationRead(req, res) {
 async function getFeedback(req, res) {
   try {
     const { sort = "recent" } = req.query;
-    const order = sort === "top" ? { column: "rating", ascending: false } : { column: "created_at", ascending: false };
+    const order =
+      sort === "top"
+        ? { column: "rating", ascending: false }
+        : { column: "created_at", ascending: false };
 
     const { data, error } = await supabase
       .from("feedback")

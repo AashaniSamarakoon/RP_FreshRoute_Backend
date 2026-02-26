@@ -62,14 +62,19 @@ async function getForecast(req, res) {
       day: new Date(d.date).toLocaleDateString("en-US", { weekday: "long" }),
       trend: "stable",
       trendText: "Stable",
-      value: typeof d.forecast_value === "number" ? d.forecast_value.toFixed(2) : "N/A",
+      value:
+        typeof d.forecast_value === "number"
+          ? d.forecast_value.toFixed(2)
+          : "N/A",
       unit: String(target).toLowerCase() === "price" ? "Rs." : "units",
     }));
 
     res.json({ days });
   } catch (err) {
     console.error("Forecast error", err);
-    res.status(500).json({ message: "Failed to fetch forecast", error: err.message });
+    res
+      .status(500)
+      .json({ message: "Failed to fetch forecast", error: err.message });
   }
 }
 
@@ -100,16 +105,27 @@ async function getForecast7Day(req, res) {
       if (simpleRows && simpleRows.length > 0) {
         let prev = null;
         const days = simpleRows.map((row) => {
-          const valueNum = typeof row.forecast_value === "number" ? row.forecast_value : Number(row.forecast_value);
+          const valueNum =
+            typeof row.forecast_value === "number"
+              ? row.forecast_value
+              : Number(row.forecast_value);
           let trend = "stable";
           if (prev !== null && typeof valueNum === "number") {
-            trend = valueNum > prev ? "up" : valueNum < prev ? "down" : "stable";
+            trend =
+              valueNum > prev ? "up" : valueNum < prev ? "down" : "stable";
           }
           prev = valueNum;
           return {
-            day: new Date(row.date).toLocaleDateString("en-US", { weekday: "long" }),
+            day: new Date(row.date).toLocaleDateString("en-US", {
+              weekday: "long",
+            }),
             trend,
-            trendText: trend === "up" ? "Increase" : trend === "down" ? "Decrease" : "Stable",
+            trendText:
+              trend === "up"
+                ? "Increase"
+                : trend === "down"
+                  ? "Decrease"
+                  : "Stable",
             value: typeof valueNum === "number" ? valueNum.toFixed(2) : "N/A",
             unit: target === "price" ? "Rs." : "units",
           };
@@ -118,7 +134,8 @@ async function getForecast7Day(req, res) {
         return res.json({ days });
       }
 
-      const altTarget = String(target).toLowerCase() === "price" ? "demand" : "price";
+      const altTarget =
+        String(target).toLowerCase() === "price" ? "demand" : "price";
       const { data: altRows, error: altErr } = await supabase
         .from("forecasts")
         .select("fruit, target, date, forecast_value")
@@ -136,16 +153,31 @@ async function getForecast7Day(req, res) {
       if (altRows && altRows.length > 0) {
         let prevAlt = null;
         const daysAlt = altRows.map((row) => {
-          const valueNum = typeof row.forecast_value === "number" ? row.forecast_value : Number(row.forecast_value);
+          const valueNum =
+            typeof row.forecast_value === "number"
+              ? row.forecast_value
+              : Number(row.forecast_value);
           let trend = "stable";
           if (prevAlt !== null && typeof valueNum === "number") {
-            trend = valueNum > prevAlt ? "up" : valueNum < prevAlt ? "down" : "stable";
+            trend =
+              valueNum > prevAlt
+                ? "up"
+                : valueNum < prevAlt
+                  ? "down"
+                  : "stable";
           }
           prevAlt = valueNum;
           return {
-            day: new Date(row.date).toLocaleDateString("en-US", { weekday: "long" }),
+            day: new Date(row.date).toLocaleDateString("en-US", {
+              weekday: "long",
+            }),
             trend,
-            trendText: trend === "up" ? "Increase" : trend === "down" ? "Decrease" : "Stable",
+            trendText:
+              trend === "up"
+                ? "Increase"
+                : trend === "down"
+                  ? "Decrease"
+                  : "Stable",
             value: typeof valueNum === "number" ? valueNum.toFixed(2) : "N/A",
             unit: altTarget === "price" ? "Rs." : "units",
           };
@@ -161,7 +193,9 @@ async function getForecast7Day(req, res) {
     }
   } catch (err) {
     console.error("Forecast error", err);
-    res.status(500).json({ days: [], message: err?.message || "Failed to fetch forecast" });
+    res
+      .status(500)
+      .json({ days: [], message: err?.message || "Failed to fetch forecast" });
   }
 }
 
