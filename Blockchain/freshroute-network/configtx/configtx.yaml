@@ -1,0 +1,259 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+---
+################################################################################
+#
+#   Section: Organizations
+#
+#   - This section defines the different organizational identities which will
+#   be referenced later in the configuration.
+#
+################################################################################
+Organizations:
+  - &OrdererOrg
+    Name: OrdererOrg
+    ID: OrdererMSP
+    MSPDir: ../organizations/ordererOrganizations/freshroute.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('OrdererMSP.admin')"
+    OrdererEndpoints:
+      - orderer.freshroute.com:7050
+      - orderer2.freshroute.com:7052
+      - orderer3.freshroute.com:7056
+
+  - &FarmerOrg
+    Name: FarmerOrgMSP
+    ID: FarmerOrgMSP
+    MSPDir: ../organizations/peerOrganizations/farmer.freshroute.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('FarmerOrgMSP.admin', 'FarmerOrgMSP.peer', 'FarmerOrgMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('FarmerOrgMSP.admin', 'FarmerOrgMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('FarmerOrgMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('FarmerOrgMSP.peer')"
+
+  - &BuyerOrg
+    Name: BuyerOrgMSP
+    ID: BuyerOrgMSP
+    MSPDir: ../organizations/peerOrganizations/buyer.freshroute.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('BuyerOrgMSP.admin', 'BuyerOrgMSP.peer', 'BuyerOrgMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('BuyerOrgMSP.admin', 'BuyerOrgMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('BuyerOrgMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('BuyerOrgMSP.peer')"
+
+  - &TransporterOrg
+    Name: TransporterOrgMSP
+    ID: TransporterOrgMSP
+    MSPDir: ../organizations/peerOrganizations/transporter.freshroute.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('TransporterOrgMSP.admin', 'TransporterOrgMSP.peer', 'TransporterOrgMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('TransporterOrgMSP.admin', 'TransporterOrgMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('TransporterOrgMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('TransporterOrgMSP.peer')"
+
+################################################################################
+#
+#   SECTION: Capabilities
+#
+#   - This section defines the capabilities of fabric network. This is a new
+#   concept as of v1.1.0 and should not be utilized in mixed networks with
+#   v1.0.x peers and orderers.  Capabilities define features which must be
+#   present in a fabric binary for that binary to safely participate in the
+#   fabric network.  For instance, if a new MSP type is added, newer binaries
+#   might recognize and validate the signatures from this type, while older
+#   binaries without this support would be unable to validate those
+#   transactions.  This could lead to different versions of the fabric binaries
+#   having different world states.  Instead, defining a capability for a channel
+#   informs those binaries without this capability that they must cease
+#   processing transactions until they have been upgraded.  For v1.0.x if any
+#   capabilities are defined (including a map with all capabilities turned off)
+#   then the v1.0.x peer will deliberately crash.
+#
+################################################################################
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+
+  Orderer: &OrdererCapabilities
+    V2_0: true
+
+  Application: &ApplicationCapabilities
+    V2_5: true
+
+################################################################################
+#
+#   SECTION: Application
+#
+#   - This section defines the values to encode into a config transaction or
+#   genesis block for application related parameters
+#
+################################################################################
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    LifecycleEndorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+################################################################################
+#
+#   SECTION: Orderer
+#
+#   - This section defines the values to encode into a config transaction or
+#   genesis block for orderer related parameters
+#
+################################################################################
+Orderer: &OrdererDefaults
+  OrdererType: etcdraft
+  Addresses:
+    - orderer.freshroute.com:7050
+    - orderer2.freshroute.com:7052
+    - orderer3.freshroute.com:7054
+
+  EtcdRaft:
+    Consenters:
+      - Host: orderer.freshroute.com
+        Port: 7050
+        ClientTLSCert: ../organizations/ordererOrganizations/freshroute.com/orderers/orderer.freshroute.com/tls/server.crt
+        ServerTLSCert: ../organizations/ordererOrganizations/freshroute.com/orderers/orderer.freshroute.com/tls/server.crt
+      - Host: orderer2.freshroute.com
+        Port: 7052
+        ClientTLSCert: ../organizations/ordererOrganizations/freshroute.com/orderers/orderer2.freshroute.com/tls/server.crt
+        ServerTLSCert: ../organizations/ordererOrganizations/freshroute.com/orderers/orderer2.freshroute.com/tls/server.crt
+      - Host: orderer3.freshroute.com
+        Port: 7054
+        ClientTLSCert: ../organizations/ordererOrganizations/freshroute.com/orderers/orderer3.freshroute.com/tls/server.crt
+        ServerTLSCert: ../organizations/ordererOrganizations/freshroute.com/orderers/orderer3.freshroute.com/tls/server.crt
+
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+
+################################################################################
+#
+#   CHANNEL
+#
+#   This section defines the values to encode into a config transaction or
+#   genesis block for channel related parameters.
+#
+################################################################################
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+
+  Capabilities:
+    <<: *ChannelCapabilities
+
+################################################################################
+#
+#   Profile
+#
+#   - Different configuration profiles may be encoded here to be specified
+#   as parameters to the configtxgen tool
+#
+################################################################################
+Profiles:
+  FreshRouteGenesis:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *FarmerOrg
+        - *BuyerOrg
+        - *TransporterOrg
+      Capabilities: *ApplicationCapabilities
+
+  FreshRouteChannel:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *FarmerOrg
+        - *BuyerOrg
+        - *TransporterOrg
+      Capabilities: *ApplicationCapabilities

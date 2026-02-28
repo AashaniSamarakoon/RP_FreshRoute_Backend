@@ -1,0 +1,59 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    network: "freshroute"
+
+scrape_configs:
+  # Orderer metrics
+  - job_name: "orderers"
+    static_configs:
+      - targets:
+          - "orderer.freshroute.com:9443"
+          - "orderer2.freshroute.com:9444"
+          - "orderer3.freshroute.com:9445"
+        labels:
+          group: "orderers"
+
+  # Peer metrics - Farmer Organization
+  - job_name: "peers-farmer"
+    static_configs:
+      - targets:
+          - "peer0.farmer.freshroute.com:9446"
+          - "peer1.farmer.freshroute.com:9447"
+        labels:
+          group: "peers"
+          org: "farmer"
+
+  # Peer metrics - Buyer Organization
+  - job_name: "peers-buyer"
+    static_configs:
+      - targets:
+          - "peer0.buyer.freshroute.com:9448"
+          - "peer1.buyer.freshroute.com:9449"
+        labels:
+          group: "peers"
+          org: "buyer"
+
+  # Peer metrics - Transporter Organization
+  - job_name: "peers-transporter"
+    static_configs:
+      - targets:
+          - "peer0.transporter.freshroute.com:9450"
+          - "peer1.transporter.freshroute.com:9451"
+        labels:
+          group: "peers"
+          org: "transporter"
+
+  # CouchDB metrics (if available)
+  - job_name: "couchdb"
+    static_configs:
+      - targets:
+          - "couchdb0.farmer:5984"
+          - "couchdb1.farmer:5984"
+          - "couchdb0.buyer:5984"
+          - "couchdb1.buyer:5984"
+          - "couchdb0.transporter:5984"
+          - "couchdb1.transporter:5984"
+        labels:
+          group: "couchdb"

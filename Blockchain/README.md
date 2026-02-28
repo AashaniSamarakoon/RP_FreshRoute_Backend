@@ -1,73 +1,107 @@
-[//]: # (SPDX-License-Identifier: CC-BY-4.0)
+# FreshRoute Blockchain 
 
-# Hyperledger Fabric Samples
+This document provides a comprehensive, step-by-step guide for setting up and running the Hyperledger Fabric network that powers the FreshRoute platform. Fabric provides the decentralized, immutable ledger for tracking all assets and agreements in the supply chain.
 
-You can use Fabric samples to get started working with Hyperledger Fabric, explore important Fabric features, and learn how to build applications that can interact with blockchain networks using the Fabric SDKs. To learn more about Hyperledger Fabric, visit the [Fabric documentation](https://hyperledger-fabric.readthedocs.io/en/latest).
+## 1. Prerequisites: Setting Up Your Environment
 
-Note that this branch contains samples for the latest Fabric release. For older Fabric versions, refer to the corresponding branches:
+Before you can run the network, you must install several dependencies. This is the most critical step.
 
-- [release-2.2](https://github.com/hyperledger/fabric-samples/tree/release-2.2)
-- [release-1.4](https://github.com/hyperledger/fabric-samples/tree/release-1.4)
+### 1.1. Core Tools
+Ensure the following tools are installed on your system.
 
-## Getting started with the Fabric samples
+*   **Git:** For version control.
+*   **cURL:** For downloading files.
+*   **Docker and Docker Compose:** The Fabric network runs in Docker containers. Ensure they are installed and the Docker daemon is running.
+*   **Go:** Required for some Fabric components.
+*   **Node.js:** Required for running Fabric SDKs and chaincode.
+*   **Python:** (Legacy requirement for some older scripts).
 
-To use the Fabric samples, you need to download the Fabric Docker images and the Fabric CLI tools. First, make sure that you have installed all of the [Fabric prerequisites](https://hyperledger-fabric.readthedocs.io/en/latest/prereqs.html). You can then follow the instructions to [Install the Fabric Samples, Binaries, and Docker Images](https://hyperledger-fabric.readthedocs.io/en/latest/install.html) in the Fabric documentation. In addition to downloading the Fabric images and tool binaries, the Fabric samples will also be cloned to your local machine.
+### 1.2. Installing Hyperledger Fabric Samples and Binaries (Crucial Step)
 
-## Test network
+The scripts required to run the network (like `network.sh`) and the necessary binary files (`cryptogen`, `configtxgen`, etc.) are **not included directly in this repository**. You must download them from the official Hyperledger Fabric repositories.
 
-The [Fabric test network](test-network) in the samples repository provides a Docker Compose based test network with two
-Organization peers and an ordering service node. You can use it on your local machine to run the samples listed below.
-You can also use it to deploy and test your own Fabric chaincodes and applications. To get started, see
-the [test network tutorial](https://hyperledger-fabric.readthedocs.io/en/latest/test_network.html).
+This step will create a `fabric-samples` directory, which contains the `test-network` and the `bin` directory that this project relies on.
 
-The [Kubernetes Test Network](test-network-k8s) sample builds upon the Compose network, constructing a Fabric
-network with peer, orderer, and CA infrastructure nodes running on Kubernetes.  In addition to providing a sample
-Kubernetes guide, the Kube test network can be used as a platform to author and debug _cloud ready_ Fabric Client
-applications on a development or CI workstation.
+1.  **Open a terminal and choose a directory** where you want to download the Fabric Samples. This should be **outside** of the FreshRoute project directory.
 
+2.  **Download and Install Fabric:**
+    Run the following command to download and install Fabric Samples, binaries, and Docker images for version 2.2. This version is compatible with the Node.js SDKs used in this project's backend.
 
-## Asset transfer samples and tutorials
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/hyperledger/fabric/v2.2.0/scripts/bootstrap.sh | bash -s -- 2.2.0 1.4.9 -d -s
+    ```
 
-The asset transfer series provides a series of sample smart contracts and applications to demonstrate how to store and transfer assets using Hyperledger Fabric.
-Each sample and associated tutorial in the series demonstrates a different core capability in Hyperledger Fabric. The **Basic** sample provides an introduction on how
-to write smart contracts and how to interact with a Fabric network using the Fabric SDKs. The **Ledger queries**, **Private data**, and **State-based endorsement**
-samples demonstrate these additional capabilities. Finally, the **Secured agreement** sample demonstrates how to bring all the capabilities together to securely
-transfer an asset in a more realistic transfer scenario.
+    This command will:
+    *   Download `fabric-samples` and checkout the `v2.2.0` tag.
+    *   Download the platform-specific Fabric binaries (like `configtxgen`, `cryptogen`, `peer`, `orderer`) and place them in a `bin` subdirectory within `fabric-samples`.
+    *   Download the necessary Fabric Docker images.
 
-|  **Smart Contract** | **Description** | **Tutorial** | **Smart contract languages** | **Application languages** |
-| -----------|------------------------------|----------|---------|---------|
-| [Basic](asset-transfer-basic) | The Basic sample smart contract that allows you to create and transfer an asset by putting data on the ledger and retrieving it. This sample is recommended for new Fabric users. | [Writing your first application](https://hyperledger-fabric.readthedocs.io/en/latest/write_first_app.html) | Go, JavaScript, TypeScript, Java | Go, TypeScript, Java |
-| [Ledger queries](asset-transfer-ledger-queries) | The ledger queries sample demonstrates range queries and transaction updates using range queries (applicable for both LevelDB and CouchDB state databases), and how to deploy an index with your chaincode to support JSON queries (applicable for CouchDB state database only). | [Using CouchDB](https://hyperledger-fabric.readthedocs.io/en/latest/couchdb_tutorial.html) | Go, JavaScript | Java, JavaScript |
-| [Private data](asset-transfer-private-data) | This sample demonstrates the use of private data collections, how to manage private data collections with the chaincode lifecycle, and how the private data hash can be used to verify private data on the ledger. It also demonstrates how to control asset updates and transfers using client-based ownership and access control. | [Using Private Data](https://hyperledger-fabric.readthedocs.io/en/latest/private_data_tutorial.html) | Go, TypeScript, Java | TypeScript |
-| [State-Based Endorsement](asset-transfer-sbe) | This sample demonstrates how to override the chaincode-level endorsement policy to set endorsement policies at the key-level (data/asset level). | [Using State-based endorsement](https://github.com/hyperledger/fabric-samples/tree/main/asset-transfer-sbe) | Java, TypeScript | JavaScript |
-| [Secured agreement](asset-transfer-secured-agreement) | Smart contract that uses implicit private data collections, state-based endorsement, and organization-based ownership and access control to keep data private and securely transfer an asset with the consent of both the current owner and buyer. | [Secured asset transfer](https://hyperledger-fabric.readthedocs.io/en/latest/secured_asset_transfer/secured_private_asset_transfer_tutorial.html)  | Go | TypeScript |
-| [Events](asset-transfer-events) | The events sample demonstrates how smart contracts can emit events that are read by the applications interacting with the network. | [README](asset-transfer-events/README.md)  | Go, JavaScript, Java | Go, TypeScript, Java |
-| [Attribute-based access control](asset-transfer-abac) | Demonstrates the use of attribute and identity based access control using a simple asset transfer scenario | [README](asset-transfer-abac/README.md)  | Go | _None_ |
+3.  **Add Fabric Binaries to Your Path:**
+    For convenience, add the newly created `bin` directory to your system's PATH. This allows you to run commands like `peer` and `configtxgen` from any location.
 
-## Full stack asset transfer guide
+    ```bash
+    # Example for Linux/macOS - add this to your .bashrc or .zshrc
+    export PATH=<path_to_your_fabric-samples_directory>/bin:$PATH
+    ```
+    Replace `<path_to_your_fabric-samples_directory>` with the actual path where the files were downloaded.
 
-The [full stack asset transfer guide](full-stack-asset-transfer-guide#readme) workshop demonstrates how a generic asset transfer solution for Hyperledger Fabric can be developed and deployed. This covers chaincode development, client application development, and deployment to a production-like environment.
+After this step, the `Blockchain` directory in *this* project can be seen as an extension or a customized version of the `fabric-samples` you just downloaded.
 
-## Additional samples
+## 2. Running the FreshRoute Network
 
-Additional samples demonstrate various Fabric use cases and application patterns.
+With the prerequisites installed, you can now start the network and deploy the chaincode.
 
-|  **Sample** | **Description** | **Documentation** |
-| -------------|------------------------------|------------------|
-| [Off chain data](off_chain_data) | Learn how to use block events to build an off-chain database for reporting and analytics. | [Peer channel-based event services](https://hyperledger-fabric.readthedocs.io/en/latest/peer_event_services.html) |
-| [Token SDK](token-sdk) | Sample REST API around the Hyperledger Labs [Token SDK](https://github.com/hyperledger-labs/fabric-token-sdk) for privacy friendly (zero knowledge proof) UTXO transactions. | [README](token-sdk/README.md) |
-| [Token ERC-20](token-erc-20) | Smart contract demonstrating how to create and transfer fungible tokens using an account-based model. | [README](token-erc-20/README.md) |
-| [Token UTXO](token-utxo) | Smart contract demonstrating how to create and transfer fungible tokens using a UTXO (unspent transaction output) model. | [README](token-utxo/README.md) |
-| [Token ERC-1155](token-erc-1155) | Smart contract demonstrating how to create and transfer multiple tokens (both fungible and non-fungible) using an account based model. | [README](token-erc-1155/README.md) |
-| [Token ERC-721](token-erc-721) | Smart contract demonstrating how to create and transfer non-fungible tokens using an account-based model. | [README](token-erc-721/README.md) |
-| [High throughput](high-throughput) | Learn how you can design your smart contract to avoid transaction collisions in high volume environments. | [README](high-throughput/README.md) |
-| [Simple Auction](auction-simple) | Run an auction where bids are kept private until the auction is closed, after which users can reveal their bid. | [README](auction-simple/README.md) |
-| [Dutch Auction](auction-dutch) | Run an auction in which multiple items of the same type can be sold to more than one buyer. This example also includes the ability to add an auditor organization. | [README](auction-dutch/README.md) |
+### 2.1. Start the Fabric Test Network
 
+The `test-network` script provides a simple way to stand up a development Fabric network.
 
-## License <a name="license"></a>
+1.  **Navigate to the `test-network` directory** within this repository:
+    ```bash
+    cd Blockchain/test-network
+    ```
 
-Hyperledger Project source code files are made available under the Apache
-License, Version 2.0 (Apache-2.0), located in the [LICENSE](LICENSE) file.
-Hyperledger Project documentation files are made available under the Creative
-Commons Attribution 4.0 International License (CC-BY-4.0), available at http://creativecommons.org/licenses/by/4.0/.
+2.  **Start the network and create a channel:**
+    ```bash
+    ./network.sh up createChannel -ca
+    ```
+    *   `up`: Brings up the Docker containers for the network (2 peers, 1 orderer).
+    *   `createChannel`: Creates a channel named `mychannel` for the peers to communicate on.
+    *   `-ca`: Starts the network with Certificate Authorities (CAs), which are required for registering new users (like the ones the backend will create).
+
+    If this command fails, the most common reason is that the prerequisites (especially Fabric binaries) were not installed correctly.
+
+### 2.2. Deploy the `freshroute` Chaincode
+
+Once the network is running, deploy the custom smart contract.
+
+1.  **Run the deployment script** from the same `test-network` directory:
+    ```bash
+    ./network.sh deployCC -ccn freshroute -ccp ../asset-transfer-basic/chaincode-typescript/ -ccl typescript
+    ```
+    This command orchestrates the entire chaincode deployment lifecycle.
+    *   `-ccn freshroute`: This is the **name** of our chaincode. The backend is hardcoded to look for this name.
+    *   `-ccp ../asset-transfer-basic/chaincode-typescript/`: This is the **path** to the chaincode source code.
+    *   `-ccl typescript`: This specifies the **language** of the chaincode.
+
+    After a successful deployment, you will see a confirmation message in the logs.
+
+## 3. How the Backend Connects
+
+The backend application (`../Backend`) is configured to act as a client to this Fabric network.
+
+*   **Connection Profile:** The `Backend/Services/blockchain/contractService.js` file contains the logic to connect to the network. It uses the TLS certificates from the `Blockchain/test-network/organizations` directory to establish a secure gRPC connection to the peer at `localhost:7051`.
+*   **User Wallets:** When a new user registers in the FreshRoute application, the backend generates a cryptographic identity and stores it in the `Backend/wallet` directory. This identity is then used to sign all subsequent transactions that the user submits to the blockchain, ensuring accountability.
+
+## 4. Shutting Down the Network
+
+When you are finished with development, you can shut down the network to free up system resources.
+
+1.  **Navigate to the `test-network` directory:**
+    ```bash
+    cd Blockchain/test-network
+    ```
+2.  **Run the `down` command:**
+    ```bash
+    ./network.sh down
+    ```
+    This will stop and remove all Docker containers, networks, and volumes associated with the Fabric network, giving you a clean state for the next time you run `./network.sh up`.
