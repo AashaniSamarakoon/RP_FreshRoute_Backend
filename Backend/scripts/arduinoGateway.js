@@ -4,8 +4,8 @@ const axios = require("axios");
 
 // CONFIGURATION
 const BACKEND_URL = "http://localhost:4000";
-const VEHICLE_ID = "597ccc12-17d0-4a5e-ae5d-19f64be08b6b"; // Same ID used in DB
-const SERIAL_PORT = "COM4"; // Windows: COM3, COM4... | Mac/Linux: /dev/ttyUSB0
+const VEHICLE_ID = "597ccc12-17d0-4a5e-ae5d-19f64be08b6b";
+const SERIAL_PORT = "COM4";
 const BAUD_RATE = 9600;
 
 // 1. Setup Serial Connection
@@ -21,7 +21,6 @@ port.on("open", () => {
 
 parser.on("data", (line) => {
   try {
-    // Line looks like: {"temp": 24.5, "humidity": 60.2}
     const reading = JSON.parse(line);
 
     if (reading.error) {
@@ -33,12 +32,8 @@ parser.on("data", (line) => {
       `[REAL SENSOR] Temp: ${reading.temp}°C | Hum: ${reading.humidity}%`
     );
 
-    // 3. Send to Backend (Same API as Virtual Sensor)
     sendTelemetry(reading.temp, reading.humidity);
-  } catch (e) {
-    // Sometimes serial data gets corrupted, just ignore partial lines
-    // console.error("Invalid JSON from Arduino:", line);
-  }
+  } catch (e) {}
 });
 
 // Helper Function
@@ -49,7 +44,7 @@ async function sendTelemetry(temp, humidity) {
       temp: temp,
       humidity: humidity,
     });
-    process.stdout.write(" -> Uploaded \r"); // Little trick to keep console clean
+    process.stdout.write(" -> Uploaded \r");
   } catch (err) {
     console.error(`Upload Failed: ${err.message}`);
   }
