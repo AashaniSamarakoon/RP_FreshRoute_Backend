@@ -2,17 +2,18 @@ const { supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 
 // Helper: Get farmer ID from user ID
+// farmer table only stores user_id; this returns the UUID directly.
 const getFarmerId = async (userId) => {
   const { data: farmerData, error: farmerError } = await supabase
-    .from("farmer")
-    .select("id")
+    .from("farmers")
+    .select("user_id")
     .eq("user_id", userId)
     .single();
 
   if (farmerError || !farmerData) {
     throw new Error("No farmer profile found.");
   }
-  return farmerData.id;
+  return farmerData.user_id;
 };
 
 // GET: View all pending proposals for this farmer
@@ -21,6 +22,24 @@ const getProposals = async (req, res) => {
     const userId = req.user.id;
     const farmerId = await getFarmerId(userId);
 
+    // First, get all stocks that belong to this farmer
+    const { data: farmerStocks, error: stockError } = await supabase
+      .from("estimated_stock")
+      .select("id")
+      .eq("farmer_id", farmerId);
+
+    if (stockError) throw new Error(stockError.message);
+
+    if (!farmerStocks || farmerStocks.length === 0) {
+      return res.status(200).json({
+        message: "Found 0 pending proposals",
+        proposals: [],
+      });
+    }
+
+    const stockIds = farmerStocks.map((stock) => stock.id);
+
+    // Now get proposals for these stocks
     const { data: proposals, error } = await supabase
       .from("match_proposals")
       .select(
@@ -38,18 +57,18 @@ const getProposals = async (req, res) => {
           grade,
           quantity,
           required_date,
-          delivery_location
-        ),
-        buyer:buyer_id (
-          id,
-          user:user_id (
-            name,
-            email
+          delivery_location,
+          buyer:buyer_id (
+            id,
+            user:user_id (
+              name,
+              email
+            )
           )
         )
-      `
+      `,
       )
-      .eq("farmer_id", farmerId)
+      .in("stock_id", stockIds)
       .eq("status", "PENDING_FARMER")
       .gte("expires_at", new Date().toISOString()) // Not expired
       .order("created_at", { ascending: false });
@@ -79,9 +98,8 @@ const acceptProposal = async (req, res) => {
     // 1. Get proposal and verify ownership
     const { data: proposal, error: proposalError } = await supabase
       .from("match_proposals")
-      .select("*, order:order_id(*)")
+      .select("*, order:order_id(*), stock:stock_id(farmer_id)")
       .eq("id", proposalId)
-      .eq("farmer_id", farmerId)
       .eq("status", "PENDING_FARMER")
       .single();
 
@@ -89,6 +107,13 @@ const acceptProposal = async (req, res) => {
       return res
         .status(404)
         .json({ message: "Proposal not found or already processed" });
+    }
+
+    // Verify the stock belongs to this farmer
+    if (proposal.stock.farmer_id !== farmerId) {
+      return res
+        .status(403)
+        .json({ message: "You don't have permission to accept this proposal" });
     }
 
     // Check if expired
@@ -114,7 +139,7 @@ const acceptProposal = async (req, res) => {
 
     try {
       console.log(
-        `[Blockchain] Locking stock for Order ${blockchainOrderId}...`
+        `[Blockchain] Locking stock for Order ${blockchainOrderId}...`,
       );
 
       const { contract, close } = await getContract(userId, "OrderContract");
@@ -124,7 +149,7 @@ const acceptProposal = async (req, res) => {
           "CreateOrder",
           blockchainOrderId,
           harvestId,
-          proposal.quantity_proposed.toString()
+          proposal.quantity_proposed.toString(),
         );
         blockchainStatus = "Confirmed";
         console.log("[Blockchain] Stock locked successfully.");
@@ -141,7 +166,7 @@ const acceptProposal = async (req, res) => {
     await supabase
       .from("match_proposals")
       .update({
-        status: "CONFIRMED",
+        status: "ACCEPTED",
         farmer_response_at: new Date().toISOString(),
       })
       .eq("id", proposalId);
@@ -152,13 +177,54 @@ const acceptProposal = async (req, res) => {
       .update({ quantity: stock.quantity - proposal.quantity_proposed })
       .eq("id", proposal.stock_id);
 
-    // 6. Update order status
+    // Calculate total amount using buyer pricing logic
+    // first fetch the order to get location and other fields
+    const { data: orderRow } = await supabase
+      .from("placed_orders")
+      .select("*")
+      .eq("id", proposal.order_id)
+      .single();
+    let distance = 0;
+    if (orderRow) {
+      // compute distance between farmer and delivery point
+      const { data: farmerInfo } = await supabase
+        .from("farmers")
+        .select("latitude, longitude")
+        .eq("user_id", farmerId)
+        .single();
+      if (
+        farmerInfo &&
+        orderRow.latitude != null &&
+        orderRow.longitude != null
+      ) {
+        distance = calculateDistanceKm(
+          orderRow.latitude,
+          orderRow.longitude,
+          farmerInfo.latitude,
+          farmerInfo.longitude,
+        );
+      }
+    }
+    const unit = await fetchUnitPrice(
+      orderRow.fruit_type,
+      orderRow.variant,
+      orderRow.grade,
+      new Date().toISOString().split("T")[0],
+    );
+    const breakdown = calculatePrice(
+      { quantity: proposal.quantity_proposed, distance_km: distance },
+      unit,
+    );
+    const totalAmount = breakdown.totalPrice;
+
+    // 6. Update order status to AWAITING_PAYMENT
     await supabase
       .from("placed_orders")
       .update({
-        status: "CONFIRMED",
+        status: "AWAITING_PAYMENT",
         selected_farmer_id: farmerId,
         harvest_id: proposal.stock_id,
+        total_amount: totalAmount,
         blockchain_status: blockchainStatus,
         updated_at: new Date().toISOString(),
       })
@@ -175,11 +241,16 @@ const acceptProposal = async (req, res) => {
       },
     ]);
 
-    // TODO: Notify buyer that farmer accepted
+    // TODO: Notify buyer to complete payment
 
     return res.status(200).json({
-      message: "Proposal accepted! Order is now confirmed.",
+      message:
+        "Proposal accepted! Buyer must now upload bank payment slip to confirm order.",
+      requiresPayment: true,
+      totalAmount: totalAmount,
       blockchainStatus: blockchainStatus,
+      paymentInstructions:
+        "Please upload bank payment slip to /api/buyer/payment-slip/upload",
     });
   } catch (err) {
     console.error("AcceptProposal Error:", err);
@@ -200,9 +271,8 @@ const rejectProposal = async (req, res) => {
     // 1. Get proposal and verify ownership
     const { data: proposal, error: proposalError } = await supabase
       .from("match_proposals")
-      .select("id, order_id")
+      .select("id, order_id, stock:stock_id(farmer_id)")
       .eq("id", proposalId)
-      .eq("farmer_id", farmerId)
       .eq("status", "PENDING_FARMER")
       .single();
 
@@ -210,6 +280,13 @@ const rejectProposal = async (req, res) => {
       return res
         .status(404)
         .json({ message: "Proposal not found or already processed" });
+    }
+
+    // Verify the stock belongs to this farmer
+    if (proposal.stock.farmer_id !== farmerId) {
+      return res
+        .status(403)
+        .json({ message: "You don't have permission to reject this proposal" });
     }
 
     // 2. Update proposal status

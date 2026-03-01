@@ -8,7 +8,6 @@ const getFruits = async (req, res) => {
       .order("name", { ascending: true });
 
     if (error) {
-      console.error("Supabase error fetching fruits:", error);
       return res
         .status(500)
         .json({ message: "Failed to fetch fruits", error: error.message });
@@ -16,7 +15,6 @@ const getFruits = async (req, res) => {
 
     return res.json({ fruits: data });
   } catch (err) {
-    console.error(err);
     return res
       .status(500)
       .json({ message: "Failed to fetch fruits", error: err.message });

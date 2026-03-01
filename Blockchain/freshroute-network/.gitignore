@@ -1,0 +1,43 @@
+# Logs
+log.txt
+*.log
+
+# Channel artifacts
+channel-artifacts/*.block
+channel-artifacts/*.tx
+channel-artifacts/*.json
+channel-artifacts/*.pb
+
+# System genesis block
+system-genesis-block/*.block
+
+# Organizations - crypto material (generated)
+organizations/peerOrganizations/
+organizations/ordererOrganizations/
+organizations/fabric-ca/*/msp
+organizations/fabric-ca/*/tls-cert.pem
+organizations/fabric-ca/*/ca-cert.pem
+organizations/fabric-ca/*/IssuerPublicKey
+organizations/fabric-ca/*/IssuerRevocationPublicKey
+organizations/fabric-ca/*/fabric-ca-server.db
+
+# Chaincode packages
+*.tar.gz
+
+# Docker volumes
+docker/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+temp/

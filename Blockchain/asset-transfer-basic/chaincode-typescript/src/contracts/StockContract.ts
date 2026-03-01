@@ -4,13 +4,29 @@ import { BaseContract } from './BaseContract';
 @Info({ title: 'StockContract', description: 'Manage Harvest Assets' })
 export class StockContract extends BaseContract {
 
+    // --- 1. CREATE: Accepts Array of Hashes as JSON string ---
     @Transaction()
-    async CreateHarvest(ctx: Context, harvestId: string, fruitId: string, quantity: string, pricePerUnit: string): Promise<void> {
+    async CreateHarvest(
+        ctx: Context, 
+        harvestId: string, 
+        fruitId: string, 
+        quantity: string, 
+        pricePerUnit: string,
+        imageHashesJson: string // JSON string of array, e.g. '["hash1","hash2"]'
+    ): Promise<void> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can create harvests');
 
         const txTimestamp = ctx.stub.getTxTimestamp();
         const createdAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+
+        // Parse the JSON string to array
+        let imageHashes: string[] = [];
+        try {
+            imageHashes = JSON.parse(imageHashesJson || '[]');
+        } catch (e) {
+            imageHashes = [];
+        }
 
         const harvest = {
             id: harvestId,
@@ -21,6 +37,7 @@ export class StockContract extends BaseContract {
             availableQuantity: parseInt(quantity),
             pricePerUnit: parseFloat(pricePerUnit),
             status: 'FRESH',
+            imageHashes: imageHashes, // <--- Storing multiple proofs
             createdAt: createdAt
         };
 
@@ -34,21 +51,38 @@ export class StockContract extends BaseContract {
         return data.toString();
     }
 
+    // --- 2. UPDATE: Accepts Array of Hashes as JSON string ---
     @Transaction()
-    async UpdateHarvest(ctx: Context, harvestId: string, newQuantity: string, newPrice: string, status: string): Promise<void> {
+    async UpdateHarvest(
+        ctx: Context, 
+        harvestId: string, 
+        newQuantity: string, 
+        newPrice: string, 
+        status: string,
+        newImageHashesJson: string // JSON string of array
+    ): Promise<void> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
         
         const harvest = JSON.parse(data.toString());
         const client = this.getClient(ctx);
 
-        // Security: Only the owner (farmer) can update their stock
         if (harvest.farmerId !== client.id) throw new Error('Unauthorized update attempt');
 
         harvest.quantity = parseInt(newQuantity);
-        harvest.availableQuantity = parseInt(newQuantity); // Reset available stock
+        harvest.availableQuantity = parseInt(newQuantity);
         harvest.pricePerUnit = parseFloat(newPrice);
         harvest.status = status;
+        
+        // Parse and update hashes if valid JSON array is sent
+        try {
+            const newImageHashes = JSON.parse(newImageHashesJson || '[]');
+            if (Array.isArray(newImageHashes) && newImageHashes.length > 0) {
+                harvest.imageHashes = newImageHashes;
+            }
+        } catch (e) {
+            // Keep existing hashes if parsing fails
+        }
         
         const txTimestamp = ctx.stub.getTxTimestamp();
         harvest.updatedAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
@@ -67,5 +101,109 @@ export class StockContract extends BaseContract {
         if (harvest.farmerId !== client.id) throw new Error('Unauthorized delete attempt');
 
         await ctx.stub.deleteState(harvestId);
+    }
+
+    // --- QUERY FUNCTIONS FOR DASHBOARD ---
+    
+    @Transaction(false)
+    async GetAllHarvests(ctx: Context): Promise<string> {
+        const allResults = [];
+        const iterator = await ctx.stub.getStateByRange('', '');
+        let result = await iterator.next();
+        
+        while (!result.done) {
+            const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
+            let record;
+            try {
+                record = JSON.parse(strValue);
+                if (record.docType === 'harvest') {
+                    allResults.push(record);
+                }
+            } catch (err) {
+                console.log(err);
+            }
+            result = await iterator.next();
+        }
+        await iterator.close();
+        return JSON.stringify(allResults);
+    }
+
+    @Transaction(false)
+    async GetHarvestsByFarmer(ctx: Context, farmerId: string): Promise<string> {
+        const query = {
+            selector: {
+                docType: 'harvest',
+                farmerId: farmerId
+            }
+        };
+
+        const queryString = JSON.stringify(query);
+        const iterator = await ctx.stub.getQueryResult(queryString);
+        const results = [];
+
+        let result = await iterator.next();
+        while (!result.done) {
+            const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
+            let record;
+            try {
+                record = JSON.parse(strValue);
+                results.push(record);
+            } catch (err) {
+                console.log(err);
+            }
+            result = await iterator.next();
+        }
+        await iterator.close();
+        return JSON.stringify(results);
+    }
+
+    @Transaction(false)
+    async GetHarvestHistory(ctx: Context, harvestId: string): Promise<string> {
+        const iterator = await ctx.stub.getHistoryForKey(harvestId);
+        const results = [];
+
+        let result = await iterator.next();
+        while (!result.done) {
+            const timestamp = result.value.timestamp;
+            const record = {
+                txId: result.value.txId,
+                timestamp: timestamp ? new Date(timestamp.seconds.toNumber() * 1000).toISOString() : null,
+                isDelete: result.value.isDelete,
+                value: Buffer.from(result.value.value.toString()).toString('utf8')
+            };
+            results.push(record);
+            result = await iterator.next();
+        }
+        await iterator.close();
+        return JSON.stringify(results);
+    }
+
+    @Transaction(false)
+    async GetHarvestsByStatus(ctx: Context, status: string): Promise<string> {
+        const query = {
+            selector: {
+                docType: 'harvest',
+                status: status
+            }
+        };
+
+        const queryString = JSON.stringify(query);
+        const iterator = await ctx.stub.getQueryResult(queryString);
+        const results = [];
+
+        let result = await iterator.next();
+        while (!result.done) {
+            const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
+            let record;
+            try {
+                record = JSON.parse(strValue);
+                results.push(record);
+            } catch (err) {
+                console.log(err);
+            }
+            result = await iterator.next();
+        }
+        await iterator.close();
+        return JSON.stringify(results);
     }
 }
