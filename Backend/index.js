@@ -39,6 +39,7 @@ const forecastRouter = require("./routes/common/forecastRoutes");
 const predictStockRoutes = require("./routes/farmer/predictStockRoutes");
 const orderRoutes = require("./routes/buyer/orderRoutes");
 const matchingRoutes = require("./routes/buyer/matchingRoutes");
+const buyerGradingRoutes = require("./routes/buyer/gradingRoutes");
 const farmerDashboardRoutes = require("./routes/farmer/dashboardRoutes");
 const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes");
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
@@ -127,7 +128,7 @@ app.use(
   "/api/gradings",
   authMiddleware,
   requireRole("transporter"),
-  gradingRoutes
+  fruitGradingRoutes
 );
 
 // Farmer routes (forecast, notifications, SMS, etc.)
