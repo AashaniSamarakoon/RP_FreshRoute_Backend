@@ -167,7 +167,7 @@
 const { supabase } = require("../../utils/supabaseClient");
 const { optimizeManifest } = require("../../utils/routeOptimizer");
 const {
-  calculateDistanceKm,
+  getDrivingDistanceKm,
   getRealWeather,
   SRI_LANKA_CITIES,
 } = require("../../utils/logisticsUtils");
@@ -233,8 +233,10 @@ exports.runDailyBatch = async (req, res) => {
           }
         }
 
-        // Calculate Real Distance & Weather
-        const distance = calculateDistanceKm(pLat, pLng, dLat, dLng);
+        // Calculate Real Distance & Weather (Using OSRM now)
+        const routingData = await getDrivingDistanceKm(pLat, pLng, dLat, dLng);
+        const distance = routingData.distanceKm;
+
         // Use Pickup location for weather checks
         const weather = await getRealWeather(pLat, pLng);
 
@@ -380,7 +382,7 @@ exports.runDailyBatch = async (req, res) => {
           drop_lng: o._algo.dLng,
         }));
 
-        const optimizedRoute = optimizeManifest(
+        const optimizedRoute = await optimizeManifest(
           optimizerInput,
           vehicle.current_lat,
           vehicle.current_lng
