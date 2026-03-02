@@ -1,5 +1,31 @@
 const { supabase } = require("../../utils/supabaseClient");
-const { getContract } = require("../../Services/blockchain/contractService");
+const { calculateDistanceKm } = require("../../utils/logisticsUtils");
+
+// ─── Shared pricing helpers (mirrors orderController) ────────────────────────
+
+async function fetchUnitPrice(fruit, variant, grade, date) {
+  const { data, error } = await supabase
+    .from("freshroute_prices")
+    .select("price")
+    .eq("fruit_name", fruit)
+    .eq("variety", variant)
+    .eq("grade", grade)
+    .eq("target_date", date)
+    .limit(1)
+    .single();
+  if (error && error.code !== "PGRST116") throw error;
+  return data ? data.price : null;
+}
+
+function calculatePrice(order, unitPrice) {
+  const basePrice = unitPrice != null ? unitPrice * order.quantity : null;
+  const serviceCharge = basePrice != null ? basePrice * 0.01 : null;
+  const distanceKm = order.distance_km || 0;
+  const deliveryFee = distanceKm * 35;
+  const totalPrice =
+    basePrice != null ? basePrice + (serviceCharge || 0) + deliveryFee : null;
+  return { unitPrice, basePrice, serviceCharge, deliveryFee, totalPrice };
+}
 
 // Helper: Get farmer ID from user ID
 // farmer table only stores user_id; this returns the UUID directly.
@@ -51,17 +77,18 @@ const getProposals = async (req, res) => {
         status,
         expires_at,
         created_at,
-        order:order_id (
+        order:placed_orders!order_id (
           fruit_type,
           variant,
           grade,
           quantity,
           required_date,
           delivery_location,
-          buyer:buyer_id (
-            id,
-            user:user_id (
-              name,
+          buyer:buyers!buyer_id (
+            user_id,
+            user:users!user_id (
+              first_name,
+              last_name,
               email
             )
           )
@@ -98,7 +125,9 @@ const acceptProposal = async (req, res) => {
     // 1. Get proposal and verify ownership
     const { data: proposal, error: proposalError } = await supabase
       .from("match_proposals")
-      .select("*, order:order_id(*), stock:stock_id(farmer_id)")
+      .select(
+        "*, order:placed_orders!order_id(*), stock:estimated_stock!stock_id(farmer_id)",
+      )
       .eq("id", proposalId)
       .eq("status", "PENDING_FARMER")
       .single();
@@ -132,35 +161,8 @@ const acceptProposal = async (req, res) => {
       return res.status(400).json({ message: "Insufficient stock available" });
     }
 
-    // 3. Record on Blockchain
-    const blockchainOrderId = `ORDER_${proposal.order_id}`;
-    const harvestId = `HARVEST_${proposal.stock_id}`;
-    let blockchainStatus = "Pending";
-
-    try {
-      console.log(
-        `[Blockchain] Locking stock for Order ${blockchainOrderId}...`,
-      );
-
-      const { contract, close } = await getContract(userId, "OrderContract");
-
-      try {
-        await contract.submitTransaction(
-          "CreateOrder",
-          blockchainOrderId,
-          harvestId,
-          proposal.quantity_proposed.toString(),
-        );
-        blockchainStatus = "Confirmed";
-        console.log("[Blockchain] Stock locked successfully.");
-      } finally {
-        await close();
-      }
-    } catch (bcError) {
-      console.error("[Blockchain] Lock failed:", bcError.message);
-      blockchainStatus = "Failed: " + bcError.message;
-      // Continue anyway - we can retry blockchain later
-    }
+    // 3. Blockchain — skipped until AcceptProposal is implemented in OrderContract chaincode
+    const blockchainStatus = "Skipped";
 
     // 4. Update proposal status
     await supabase
@@ -271,7 +273,7 @@ const rejectProposal = async (req, res) => {
     // 1. Get proposal and verify ownership
     const { data: proposal, error: proposalError } = await supabase
       .from("match_proposals")
-      .select("id, order_id, stock:stock_id(farmer_id)")
+      .select("id, order_id, stock:estimated_stock!stock_id(farmer_id)")
       .eq("id", proposalId)
       .eq("status", "PENDING_FARMER")
       .single();

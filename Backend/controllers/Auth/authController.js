@@ -156,11 +156,54 @@ const login = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-// Get Me (current user)
+// Get Me (current user) - returns global user record plus any role-specific profile
 const getMe = async (req, res) => {
   try {
-    // User is attached by authMiddleware
-    res.json({ user: req.user });
+    const userId = req.user.id;
+
+    // fetch base user details from the users table (contains onboarding, nic urls, avatar, etc.)
+    const { data: userRow, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (userError) {
+      throw userError;
+    }
+
+    // build a response object starting with authentication metadata
+    const result = {
+      auth: req.user,
+      profile: userRow,
+    };
+
+    // attach role-specific record if present
+    const role = req.user.role;
+    if (role === "farmer") {
+      const { data: farm, error: fErr } = await supabase
+        .from("farmers")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      if (!fErr) result.farmer = farm;
+    } else if (role === "buyer") {
+      const { data: buy, error: bErr } = await supabase
+        .from("buyers")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      if (!bErr) result.buyer = buy;
+    } else if (role === "transporter") {
+      const { data: t, error: tErr } = await supabase
+        .from("transporters")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      if (!tErr) result.transporter = t;
+    }
+
+    return res.json(result);
   } catch (err) {
     console.error("GetMe error:", err);
     res.status(500).json({ message: "Server error" });
