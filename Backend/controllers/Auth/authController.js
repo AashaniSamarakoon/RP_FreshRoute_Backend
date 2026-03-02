@@ -113,7 +113,9 @@ const signup = async (req, res) => {
 // Login
 const login = async (req, res) => {
   try {
-    const { identifier, password } = req.body; // 'identifier' can be Email, Phone, or NIC
+    // Accept either 'identifier' (email, phone, or NIC) or 'email' for frontend compatibility
+    const identifier = req.body.identifier ?? req.body.email;
+    const { password } = req.body;
 
     if (!identifier || !password) {
       return res.status(400).json({ message: "Missing fields" });

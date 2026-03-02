@@ -1,4 +1,5 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabase, supabaseAdmin } = require("../../utils/supabaseClient");
+const logger = require("../../utils/logger");
 
 /**
  * GET /api/buyer/gradings/:orderId
@@ -8,14 +9,24 @@ const { supabase } = require("../../utils/supabaseClient");
 const getGradingsByOrder = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
+    const user = req.user || {};
+    const { orderId } = req.params;
+
+    logger.info("Get gradings by order", {
+      orderId: orderId || "(missing)",
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      },
+    });
+
     if (!userId) {
       return res.status(401).json({ 
         success: false,
         message: "Unauthorized" 
       });
     }
-
-    const { orderId } = req.params;
 
     if (!orderId) {
       return res.status(400).json({
@@ -24,17 +35,25 @@ const getGradingsByOrder = async (req, res) => {
       });
     }
 
-    // 1. Verify buyer exists
+    // 1. Verify buyer exists in users table (users.id is the buyer id for placed_orders.buyer_id)
     const { data: buyerData, error: buyerError } = await supabase
-      .from("buyers")
-      .select("id")
-      .eq("user_id", userId)
+      .from("users")
+      .select("id, role")
+      .eq("id", userId)
       .single();
 
     if (buyerError || !buyerData) {
       return res.status(404).json({
         success: false,
         message: "Buyer profile not found",
+      });
+    }
+
+    const role = (buyerData.role || "").toUpperCase();
+    if (role !== "BUYER") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Buyer role required.",
       });
     }
 
@@ -46,12 +65,12 @@ const getGradingsByOrder = async (req, res) => {
       .eq("buyer_id", buyerData.id)
       .single();
 
-    if (orderError || !order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found or access denied",
-      });
-    }
+    // if (orderError || !order) {
+    //   return res.status(404).json({
+    //     success: false,
+    //     message: "Order not found or access denied",
+    //   });
+    // }
 
     // 3. Get all gradings for this order
     const { data: gradings, error: gradingsError } = await supabase
@@ -148,17 +167,25 @@ const getAllGradings = async (req, res) => {
       });
     }
 
-    // 1. Verify buyer exists and get buyer ID
+    // 1. Verify buyer exists in users table (users.id is the buyer id for placed_orders.buyer_id)
     const { data: buyerData, error: buyerError } = await supabase
-      .from("buyers")
-      .select("id")
-      .eq("user_id", userId)
+      .from("users")
+      .select("id, role")
+      .eq("id", userId)
       .single();
 
     if (buyerError || !buyerData) {
       return res.status(404).json({
         success: false,
         message: "Buyer profile not found",
+      });
+    }
+
+    const roleAll = (buyerData.role || "").toUpperCase();
+    if (roleAll !== "BUYER") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Buyer role required.",
       });
     }
 

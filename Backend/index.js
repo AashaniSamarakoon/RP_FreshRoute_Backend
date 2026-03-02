@@ -47,7 +47,10 @@ const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 const farmerRoutes = require("./routes/farmer");
 const trustRoutes = require("./routes/common/trustRoutes");
 const fruitGradingRoutes = require("./routes/common/fruitGradingRoutes");
+const fruitClassificationRoutes = require("./routes/common/fruitClassificationRoutes");
+const gradingRoutes = require("./routes/transporter/gradingRoutes");
 const fruitGradingService = require("./Services/fruitGrading/fruitGradingService");
+const fruitClassificationService = require("./Services/fruitGrading/fruitClassificationService");
 const multer = require("multer");
 const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
 const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
@@ -128,7 +131,7 @@ app.use(
   "/api/gradings",
   authMiddleware,
   requireRole("transporter"),
-  fruitGradingRoutes
+  gradingRoutes
 );
 
 // Farmer routes (forecast, notifications, SMS, etc.)
@@ -184,6 +187,14 @@ app.use(
   authMiddleware,
   requireRole("buyer", "transporter"),
   fruitGradingRoutes
+);
+
+// Fruit classification only - separate endpoint (buyer or transporter)
+app.use(
+  "/api/fruit-classification",
+  authMiddleware,
+  requireRole("buyer", "transporter"),
+  fruitClassificationRoutes
 );
 
 // Alert routes (for notifications and SMS)
@@ -266,8 +277,17 @@ app.use(
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
 
-// Load ONNX model on startup
+// Load ONNX models on startup
 async function startServer() {
+  try {
+    console.log("Loading fruit classification model...");
+    await fruitClassificationService.loadModel();
+    console.log("✅ Fruit classification model loaded successfully");
+  } catch (error) {
+    console.error("⚠️  Warning: Failed to load fruit classification model:", error.message);
+    console.error("   Fruit classification endpoints will not be available.");
+  }
+
   try {
     console.log("Loading fruit grading model...");
     await fruitGradingService.loadModel();
