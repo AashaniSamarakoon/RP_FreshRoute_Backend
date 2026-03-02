@@ -122,7 +122,7 @@ const login = async (req, res) => {
     // 1. Identity Lookup: Find the user's primary email using the unified identifier
     const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("email, role")
+      .select("email, role, is_onboarded") // Add is_onboarded here
       .or(
         `email.eq.${identifier},phone.eq.${identifier},nic_number.eq.${identifier}`,
       )
@@ -146,6 +146,7 @@ const login = async (req, res) => {
     const user = {
       ...authData.user,
       role: profile.role.toLowerCase(),
+      isOnboarded: profile.is_onboarded, // Pass it to the frontend
     };
 
     const token = authData.session.access_token;
