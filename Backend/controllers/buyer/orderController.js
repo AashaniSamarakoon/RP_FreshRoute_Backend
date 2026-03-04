@@ -120,6 +120,24 @@ const placeOrder = async (req, res) => {
         .eq("id", orderData.id);
     }
 
+    // BEFORE returning, if a farmer has already been selected (unlikely on initial place)
+    // fetch their pickup/location info so client can display coordinates.
+    let farmerPickup = null;
+    if (orderData.selected_farmer_id) {
+      const { data: fpData, error: fpErr } = await supabase
+        .from("farmers")
+        .select("user_id,latitude,longitude,location")
+        .eq("user_id", orderData.selected_farmer_id)
+        .single();
+      if (!fpErr && fpData) {
+        farmerPickup = {
+          latitude: fpData.latitude,
+          longitude: fpData.longitude,
+          location: fpData.location,
+        };
+      }
+    }
+
     // RETURN matches immediately so Buyer can choose
     // If no matches now, cron job will retry every 2 hours
     return res.status(201).json({
@@ -127,7 +145,7 @@ const placeOrder = async (req, res) => {
         matches.length > 0
           ? "Order placed. Matches found! Please select a farmer."
           : "Order placed. No matches yet - we'll notify you when farmers are available.",
-      order: { ...orderData, status: finalStatus },
+      order: { ...orderData, status: finalStatus, farmerPickup },
       matches: matches,
     });
   } catch (err) {
@@ -220,6 +238,36 @@ const getMyOrders = async (req, res) => {
         }
       }),
     );
+
+    // If any orders have a selected farmer, batch fetch pickup/location info
+    const farmerIds = Array.from(
+      new Set(
+        (orders || [])
+          .filter((o) => o.selected_farmer_id)
+          .map((o) => o.selected_farmer_id),
+      ),
+    );
+    if (farmerIds.length > 0) {
+      const { data: farmerRecords, error: farmerErr } = await supabase
+        .from("farmers")
+        .select("user_id,latitude,longitude,location")
+        .in("user_id", farmerIds);
+      if (!farmerErr && farmerRecords) {
+        const farmerMap = {};
+        farmerRecords.forEach((f) => {
+          farmerMap[f.user_id] = f;
+        });
+        orders.forEach((ord) => {
+          if (ord.selected_farmer_id && farmerMap[ord.selected_farmer_id]) {
+            ord.farmerPickup = {
+              latitude: farmerMap[ord.selected_farmer_id].latitude,
+              longitude: farmerMap[ord.selected_farmer_id].longitude,
+              location: farmerMap[ord.selected_farmer_id].location,
+            };
+          }
+        });
+      }
+    }
 
     return res.status(200).json({
       orders: orders || [],
@@ -423,7 +471,10 @@ const getOrderDetails = async (req, res) => {
             : "Unknown",
           phone: userInfo?.phone || "",
           rating: undefined,
-          location: undefined,
+          // include pickup location details pulled from farmers table
+          latitude: farmerData.latitude,
+          longitude: farmerData.longitude,
+          location: farmerData.location,
         };
       }
     }
