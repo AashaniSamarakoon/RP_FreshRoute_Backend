@@ -51,7 +51,6 @@ const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
 const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
 const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
-const paymentSlipRoutes = require("./routes/buyer/paymentSlipRoutes");
 const paymentRoutes = require("./routes/buyer/paymentRoutes");
 const deliveryRoutes = require("./routes/transporter/deliveryRoutes");
 const app = express();
@@ -160,9 +159,6 @@ app.use("/api/trust", trustRoutes);
 
 // Alert routes (for notifications and SMS)
 app.use("/api/alerts", alertRoutes);
-
-// Payment slip routes (Bank slip upload & verification - Fully Automated)
-app.use("/api/buyer/payment-slip", paymentSlipRoutes);
 
 // Payment status and release routes
 app.use("/api/buyer/payment", paymentRoutes);
