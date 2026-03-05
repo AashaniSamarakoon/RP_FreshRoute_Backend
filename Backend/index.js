@@ -52,6 +52,8 @@ const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
 const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
 const paymentRoutes = require("./routes/buyer/paymentRoutes");
+const payhereRoutes = require("./routes/payhereRoutes");
+const { runDailyAutoCharge } = require("./Services/payhereChargeService");
 const deliveryRoutes = require("./routes/transporter/deliveryRoutes");
 const app = express();
 app.use(cors());
@@ -162,6 +164,12 @@ app.use("/api/alerts", alertRoutes);
 
 // Payment status and release routes
 app.use("/api/buyer/payment", paymentRoutes);
+
+// PayHere IPN notification endpoint (no auth — called by PayHere server)
+app.use("/api/payhere", payhereRoutes);
+
+// PayHere preapproval HTML form page — no /api prefix (redirect target for mobile)
+app.use("/payhere", payhereRoutes);
 
 // Transporter delivery routes (quality check, pickup, delivery confirmation)
 app.use("/api/transporter/delivery", deliveryRoutes);
@@ -297,6 +305,16 @@ console.log(
     console.warn("[Init] Warning triggering daily forecast SMS:", err.message);
   }
 })();
+
+// PayHere auto-charge: charge pre-approved orders due today, daily at 8:00 AM
+cron.schedule("0 8 * * *", async () => {
+  console.log("[Cron] Running PayHere daily auto-charge...");
+  try {
+    await runDailyAutoCharge();
+  } catch (err) {
+    console.error("[Cron] PayHere auto-charge failed:", err.message);
+  }
+});
 
 // Update FreshRoute prices daily at 6:00 AM
 cron.schedule("0 6 * * *", async () => {
