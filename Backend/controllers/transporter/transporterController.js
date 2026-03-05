@@ -132,33 +132,53 @@ exports.getJobDetails = async (req, res) => {
       return res.json({ ...job, orders_data: {} });
     }
 
-    // 3. Fetch Order Details (Join with Users for Farmer/Buyer)
-    // We assume 'users' table has 'name' and 'phone' columns as requested.
-    // Note: Supabase syntax for foreign key joins: table!fk_name(cols)
+    // 3. Fetch Order Details
+    // Removed implicit join syntax because farmer_id and buyer_id lack foreign keys in the schema.
     const { data: orders, error: orderError } = await supabase
       .from("orders")
-      .select(
-        `
-        id, fruit_type, fruit_variant, quantity,
-        farmer:farmer_id ( name, phone ),
-        buyer:buyer_id ( name, phone )
-      `
-      )
+      .select("id, fruit_type, fruit_variant, quantity, farmer_id, buyer_id")
       .in("id", orderIds);
 
     if (orderError) throw orderError;
 
+    // 3.5. Fetch Users for Farmers and Buyers
+    const userIds = [...new Set([
+      ...orders.map((o) => o.farmer_id).filter(Boolean),
+      ...orders.map((o) => o.buyer_id).filter(Boolean)
+    ])];
+
+    let usersMap = {};
+    if (userIds.length > 0) {
+      const { data: users, error: usersError } = await supabase
+        .from("users")
+        .select("id, first_name, last_name, phone")
+        .in("id", userIds);
+
+      if (usersError) throw usersError;
+
+      users.forEach(u => {
+        usersMap[u.id] = {
+          name: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
+          phone: u.phone
+        };
+      });
+    }
+
     // 4. Fetch Fruit Specs (Based on variants found in orders)
-    const variants = [...new Set(orders.map((o) => o.fruit_variant))];
+    const variants = [...new Set(orders.map((o) => o.fruit_variant).filter(Boolean))];
 
-    const { data: specs, error: specError } = await supabase
-      .from("fruit_specs")
-      .select(
-        "variant_name, optimal_temp_c, max_safe_temp_c, force_refrigeration"
-      )
-      .in("variant_name", variants);
+    let specs = [];
+    if (variants.length > 0) {
+      const { data: specsData, error: specError } = await supabase
+        .from("fruit_specs")
+        .select(
+          "variant_name, optimal_temp_c, max_safe_temp_c, force_refrigeration"
+        )
+        .in("variant_name", variants);
 
-    if (specError) throw specError;
+      if (specError) throw specError;
+      specs = specsData || [];
+    }
 
     // 5. Combine Data into a Lookup Map
     // Structure: { "ORDER_ID": { ...orderData, specs: { ...specData } } }
@@ -169,7 +189,12 @@ exports.getJobDetails = async (req, res) => {
       const spec = specs.find((s) => s.variant_name === order.fruit_variant);
 
       ordersData[order.id] = {
-        ...order,
+        id: order.id,
+        fruit_type: order.fruit_type,
+        fruit_variant: order.fruit_variant,
+        quantity: order.quantity,
+        farmer: usersMap[order.farmer_id] || null,
+        buyer: usersMap[order.buyer_id] || null,
         specs: spec || null,
       };
     });

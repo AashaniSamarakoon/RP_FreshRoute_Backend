@@ -10,7 +10,7 @@ const SRI_LANKA_CITIES = {
   hambantota: { lat: 6.1429, lng: 81.1212 },
 };
 
-// Standard Haversine formula for straight-line distance
+// Standard Haversine formula for straight-line distance (Fallback)
 function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
 
@@ -27,6 +27,45 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c * 10) / 10;
+}
+
+// REAL-WORLD ROUTING (OSRM API)
+// Calculates actual driving distance and duration over road networks.
+async function getDrivingDistanceKm(lat1, lon1, lat2, lon2) {
+  try {
+    if (!lat1 || !lon1 || !lat2 || !lon2) {
+       console.log(`[ROUTING] ⚠️ Missing coordinates. Using fallback distance 0km.`);
+       return { distanceKm: 0, durationMins: 0, via: 'fallback-missing' };
+    }
+
+    console.log(`[ROUTING] 📡 Fetching real driving distance via OSRM (${lat1},${lon1} to ${lat2},${lon2})...`);
+    
+    // Using OSRM public test server (Requires long,lat format)
+    const url = `http://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+    
+    const response = await axios.get(url);
+    
+    if (response.data && response.data.routes && response.data.routes.length > 0) {
+      const route = response.data.routes[0];
+      const distanceKm = Math.round(route.distance / 100) / 10; // Convert meters to km with 1 decimal
+      const durationMins = Math.round(route.duration / 60);     // Convert seconds to minutes
+
+      console.log(`[ROUTING] ✅ Success! OSRM Driving Distance: ${distanceKm}km, Est Duration: ${durationMins}mins`);
+      return { distanceKm, durationMins, via: 'osrm' };
+    }
+    
+    throw new Error('OSRM API returned no routes');
+
+  } catch (error) {
+    console.error(`[ROUTING] ❌ OSRM API Error: ${error.message}. Falling back to straight-line distance.`);
+    // Fallback to Haversine if API is down/rate-limited
+    const fallbackDist = calculateDistanceKm(lat1, lon1, lat2, lon2);
+    // Estimate roughly 40km/h average speed in SL context for fallback duration
+    const fallbackDuration = Math.round((fallbackDist / 40) * 60); 
+    
+    console.log(`[ROUTING] ⚠️ Fallback Haversine Distance: ${fallbackDist}km, Est Duration: ${fallbackDuration}mins`);
+    return { distanceKm: fallbackDist, durationMins: fallbackDuration, via: 'haversine-fallback' };
+  }
 }
 
 // Fetch real weather data
@@ -56,4 +95,4 @@ async function getRealWeather(lat, lng) {
   }
 }
 
-module.exports = { SRI_LANKA_CITIES, calculateDistanceKm, getRealWeather };
+module.exports = { SRI_LANKA_CITIES, calculateDistanceKm, getDrivingDistanceKm, getRealWeather };

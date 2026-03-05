@@ -1,6 +1,6 @@
 const { supabase } = require("../../utils/supabaseClient");
 const {
-  calculateDistanceKm,
+  getDrivingDistanceKm,
   getMockWeather,
   SRI_LANKA_CITIES,
 } = require("../../utils/logisticsUtils");
@@ -72,10 +72,14 @@ exports.assignVehicleToOrder = async (req, res) => {
 
     // 2.2 Calculate Distance
     let distance = 0;
+    let durationMins = 0;
     if (pLat && dLat) {
-      distance = calculateDistanceKm(pLat, pLng, dLat, dLng);
+      const routingData = await getDrivingDistanceKm(pLat, pLng, dLat, dLng);
+      distance = routingData.distanceKm;
+      durationMins = routingData.durationMins;
+      
       print(`[MAPS] Route: ${order.pickup_location} -> ${order.drop_location}`);
-      print(`[MAPS] Calculated Distance: ${distance} km`);
+      print(`[MAPS] OSRM Driving Distance: ${distance} km (Est: ${durationMins} mins)`);
     } else {
       print(`[WARN] Coordinates missing. Assuming safe distance.`);
       distance = 50; // Default safety
@@ -84,10 +88,10 @@ exports.assignVehicleToOrder = async (req, res) => {
     // 2.3 Get Weather
     const weather = await getMockWeather(
       order.pickup_date,
-      order.pickup_location
+      order.pickup_location,
     );
     print(
-      `[WEATHER] Condition at ${order.pickup_location}: ${weather.temp_c}°C, ${weather.condition}`
+      `[WEATHER] Condition at ${order.pickup_location}: ${weather.temp_c}°C, ${weather.condition}`,
     );
 
     // ====================================================
@@ -148,9 +152,9 @@ exports.assignVehicleToOrder = async (req, res) => {
     if (fleetErr) throw fleetErr;
 
     // 4.3 Sort Vehicles
-    // We want to fill large trucks first.
-    // We ALSO want to prioritize the "Correct" type to save money.
-    // (e.g. If we need Uncovered, use Uncovered before wasting a Fridge truck)
+    // fill large trucks first.
+    // prioritize the "Correct" type to save money.
+    // If we need Uncovered, use Uncovered before wasting a Fridge truck
 
     fleet.sort((a, b) => {
       // Priority 1: Exact Type Match? (Simple heuristic: sort by type index)
@@ -188,7 +192,7 @@ exports.assignVehicleToOrder = async (req, res) => {
       usedVehicleIds.push(vehicle.id);
       remainingQty -= load;
       print(
-        `   -> Allocated ${vehicle.vehicle_license_plate} (${vehicle.vehicle_type}). Load: ${load}kg`
+        `   -> Allocated ${vehicle.vehicle_license_plate} (${vehicle.vehicle_type}). Load: ${load}kg`,
       );
     }
 
