@@ -24,7 +24,7 @@ const getStockById = async (req, res) => {
     if (data && data.farmer && data.farmer.user_id) {
       const { data: userInfo } = await supabase
         .from("users")
-        .select("id,name")
+        .select("id,first_name,last_name")
         .eq("id", data.farmer.user_id)
         .single();
       data.farmer.user = userInfo || null;
@@ -81,10 +81,10 @@ const submitPredictStock = async (req, res) => {
       }
     }
 
-    // Fetch Farmer ID
+    // Fetch Farmer record (table now uses user_id as primary key)
     const { data: farmerData } = await supabase
       .from("farmers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
@@ -96,7 +96,8 @@ const submitPredictStock = async (req, res) => {
       .from("estimated_stock")
       .insert([
         {
-          farmer_id: farmerData.id,
+          // the farmer_id column refers directly to the user_id in the updated schema
+          farmer_id: farmerData.user_id,
           fruit_type,
           variant,
           quantity: parseInt(quantity),
