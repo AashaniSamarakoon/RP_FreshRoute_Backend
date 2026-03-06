@@ -3,6 +3,9 @@ const { supabase } = require("../../utils/supabaseClient");
 
 exports.updateTelemetry = async (req, res) => {
   const { vehicle_id, temp, humidity } = req.body;
+  console.log(
+    `Received telemetry for Vehicle ${vehicle_id}: Temp=${temp}°C, Humidity=${humidity}%`,
+  );
 
   try {
     // 1. Update Vehicle "Live" Data
