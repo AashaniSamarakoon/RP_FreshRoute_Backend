@@ -39,12 +39,19 @@ const forecastRouter = require("./routes/common/forecastRoutes");
 const predictStockRoutes = require("./routes/farmer/predictStockRoutes");
 const orderRoutes = require("./routes/buyer/orderRoutes");
 const matchingRoutes = require("./routes/buyer/matchingRoutes");
+const buyerGradingRoutes = require("./routes/buyer/gradingRoutes");
 const farmerDashboardRoutes = require("./routes/farmer/dashboardRoutes");
 const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes");
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 const farmerRoutes = require("./routes/farmer");
 const trustRoutes = require("./routes/common/trustRoutes");
+const fruitGradingRoutes = require("./routes/common/fruitGradingRoutes");
+const fruitClassificationRoutes = require("./routes/common/fruitClassificationRoutes");
+const gradingRoutes = require("./routes/transporter/gradingRoutes");
+const fruitGradingService = require("./Services/fruitGrading/fruitGradingService");
+const fruitClassificationService = require("./Services/fruitGrading/fruitClassificationService");
+const multer = require("multer");
 const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
 const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
 
@@ -125,6 +132,14 @@ app.use(
   transporterRoutes,
 );
 
+// Grading routes (transporter role required)
+app.use(
+  "/api/gradings",
+  authMiddleware,
+  requireRole("transporter"),
+  gradingRoutes
+);
+
 // Farmer routes (forecast, notifications, SMS, etc.)
 app.use("/api/farmer", authMiddleware, requireRole("farmer"), farmerRoutes);
 
@@ -151,6 +166,14 @@ app.use(
   orderRoutes,
 );
 
+// Buyer grading routes (get grading images)
+app.use(
+  "/api/buyer/gradings",
+  authMiddleware,
+  requireRole("buyer"),
+  buyerGradingRoutes
+);
+
 // Buyer matching (view/trigger proposals from matching algorithm)
 app.use("/api/buyer/matching", matchingRoutes);
 
@@ -163,6 +186,22 @@ app.use("/api/forecast", authMiddleware, forecastRouter);
 // Auth routes
 app.use("/api/auth", authRoutes);
 app.use("/api/trust", trustRoutes);
+
+// Fruit Grading Routes (buyer or transporter role required)
+app.use(
+  "/api/fruit-grading",
+  authMiddleware,
+  requireRole("buyer", "transporter"),
+  fruitGradingRoutes
+);
+
+// Fruit classification only - separate endpoint (buyer or transporter)
+app.use(
+  "/api/fruit-classification",
+  authMiddleware,
+  requireRole("buyer", "transporter"),
+  fruitClassificationRoutes
+);
 
 // Alert routes (for notifications and SMS)
 app.use("/api/alerts", alertRoutes);
@@ -192,6 +231,41 @@ app.use("/api/farmer/dashboard", farmerDashboardRoutes);
 app.use("/api/transporter/dashboard", transporterDashboardRoutes);
 app.use("/api/buyer/dashboard", buyerDashboardRoutes);
 
+// Error handler for multer errors (must be after all routes)
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "File too large. Maximum size is 10MB per file.",
+      });
+    }
+    if (error.code === "LIMIT_FILE_COUNT") {
+      return res.status(400).json({
+        success: false,
+        message: "Too many files. Maximum 5 files allowed.",
+      });
+    }
+    if (error.code === "LIMIT_FIELD_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "Field too large. Maximum size is 50MB per field.",
+      });
+    }
+    return res.status(400).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+  if (error) {
+    return res.status(400).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+  next();
+});
+
 // Blockchain Dashboard routes (NEW - business-first, role-based)
 app.use("/api/dashboard", authMiddleware, blockchainDashboardRoutes);
 
@@ -220,9 +294,30 @@ app.use((err, req, res, next) => {
 
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
-const server = app.listen(port, "0.0.0.0", () => {
-  console.log(`FreshRoute backend running on port ${port}`);
-  console.log(`Available at: http://0.0.0.0:${port}`);
+
+// Load ONNX models on startup
+async function startServer() {
+  try {
+    console.log("Loading fruit classification model...");
+    await fruitClassificationService.loadModel();
+    console.log("✅ Fruit classification model loaded successfully");
+  } catch (error) {
+    console.error("⚠️  Warning: Failed to load fruit classification model:", error.message);
+    console.error("   Fruit classification endpoints will not be available.");
+  }
+
+  try {
+    console.log("Loading fruit grading model...");
+    await fruitGradingService.loadModel();
+    console.log("✅ Fruit grading model loaded successfully");
+  } catch (error) {
+    console.error("⚠️  Warning: Failed to load fruit grading model:", error.message);
+    console.error("   Fruit grading endpoints will not be available.");
+  }
+
+  const server = app.listen(port, "0.0.0.0", () => {
+    console.log(`FreshRoute backend running on port ${port}`);
+    console.log(`Available at: http://0.0.0.0:${port}`);
 
   // Start SMS scheduler and Dambulla scraper
   try {
@@ -255,6 +350,9 @@ process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
   process.exit(1);
 });
+}
+
+startServer();
 
 // ---------- SCHEDULED JOBS ----------
 // Run batch matching every 2 hours (at minute 0)

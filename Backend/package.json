@@ -29,11 +29,14 @@
     "node-cron": "^4.2.1",
     "node-domexception": "^2.0.2",
     "node-fetch": "^3.3.2",
+    "onnxruntime-node": "^1.23.2",
     "pg": "^8.16.3",
     "postgres": "^3.4.7",
     "puppeteer": "^24.34.0",
     "serialport": "^13.0.0",
-    "twilio": "^5.11.1"
+    "sharp": "^0.34.5",
+    "twilio": "^5.11.1",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
