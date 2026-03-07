@@ -386,7 +386,15 @@ async function getHomeSummary(req, res) {
       avgConfidence: forecastData?.length ? null : null,
     };
 
+    // Build greeting with user name
+    const userName = req.user.first_name 
+      ? `${req.user.first_name} ${req.user.last_name || ''}`.trim()
+      : 'User';
+    const greeting = `Good morning, ${userName}`;
+
     res.json({
+      greeting,
+      user_name: userName,
       spotlight: spotlightCard,
       quickMetrics,
       forecasts: forecastData || [],
@@ -533,7 +541,47 @@ async function getFeedback(req, res) {
       return res.status(500).json({ message: "Failed to fetch feedback" });
     }
 
-    res.json({ feedback: data || [] });
+    const feedbackRows = data || [];
+    const userIds = [...new Set(feedbackRows.map((item) => item.user_id).filter(Boolean))];
+
+    let usersById = {};
+    if (userIds.length > 0) {
+      const { data: userRows, error: usersError } = await supabase
+        .from("users")
+        .select("id, first_name, last_name")
+        .in("id", userIds);
+
+      if (usersError) {
+        console.error("Feedback users lookup error", usersError);
+      } else {
+        usersById = (userRows || []).reduce((acc, user) => {
+          const fullName = `${user.first_name || ""} ${user.last_name || ""}`.trim();
+          acc[user.id] = {
+            first_name: user.first_name || null,
+            last_name: user.last_name || null,
+            user_name: fullName || "User",
+          };
+          return acc;
+        }, {});
+      }
+    }
+
+    const feedbackWithUsers = feedbackRows.map((item) => {
+      const userDetails = usersById[item.user_id] || {
+        first_name: null,
+        last_name: null,
+        user_name: "User",
+      };
+
+      return {
+        ...item,
+        ...userDetails,
+        user_uuid: item.user_id,
+        user_id: userDetails.user_name,
+      };
+    });
+
+    res.json({ feedback: feedbackWithUsers });
   } catch (err) {
     console.error("Feedback server error", err);
     res.status(500).json({ message: "Server error" });
@@ -550,7 +598,7 @@ async function createFeedback(req, res) {
     const { data, error } = await supabase
       .from("feedback")
       .insert({ body, rating: rating ?? null, user_id: req.user.id })
-      .select("id, body, rating, status, created_at")
+      .select("id, body, rating, status, created_at, user_id")
       .single();
 
     if (error) {
@@ -558,7 +606,17 @@ async function createFeedback(req, res) {
       return res.status(500).json({ message: "Failed to submit feedback" });
     }
 
-    res.status(201).json({ feedback: data });
+    const fullName = `${req.user.first_name || ""} ${req.user.last_name || ""}`.trim();
+    const feedbackResponse = {
+      ...data,
+      first_name: req.user.first_name || null,
+      last_name: req.user.last_name || null,
+      user_name: fullName || "User",
+      user_uuid: data.user_id,
+      user_id: fullName || "User",
+    };
+
+    res.status(201).json({ feedback: feedbackResponse });
   } catch (err) {
     console.error("Create feedback server error", err);
     res.status(500).json({ message: "Server error" });

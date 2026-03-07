@@ -209,6 +209,15 @@ app.use(
   telemetryRoutes,
 );
 
+// Error handler for JSON parsing issues (must be after all routes)
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.warn("⚠️ Invalid JSON in body (e.g., 'null' string from frontend)");
+    return res.status(400).json({ error: "Invalid JSON in request body" });
+  }
+  next(err);
+});
+
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
 const server = app.listen(port, "0.0.0.0", () => {

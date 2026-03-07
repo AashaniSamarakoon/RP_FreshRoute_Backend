@@ -1,9 +1,8 @@
-const { generateToken } = require("../../Services/auth");
 const {
   registerAndEnrollUser,
 } = require("../../Services/blockchain/identityService");
 const { getContract } = require("../../Services/blockchain/contractService"); // Import the gateway bridge
-const { supabase } = require("../../utils/supabaseClient");
+const { supabase, supabaseAdmin } = require("../../utils/supabaseClient");
 
 // Signup
 const signup = async (req, res) => {
@@ -46,22 +45,40 @@ const signup = async (req, res) => {
     let identitySuccess = false;
     const fullName = `${first_name} ${last_name}`;
 
-    // create a local profile row for the new account so the rest of the
-    // backend can look it up by user_id. use the admin client to avoid any
-    // RLS or permission issues (this runs on the server).
+    // Create role-specific profile row using admin client to bypass RLS
+    let roleProfile = null;
     try {
       if (normalizedRole === "BUYER") {
-        await supabase.from("buyers").insert({ user_id: user.id });
+        const { data, error } = await supabaseAdmin
+          .from("buyers")
+          .insert({ user_id: user.id })
+          .select()
+          .single();
+        if (error) throw error;
+        roleProfile = data;
       } else if (normalizedRole === "FARMER") {
-        await supabase.from("farmers").insert({ user_id: user.id });
+        const { data, error } = await supabaseAdmin
+          .from("farmers")
+          .insert({ user_id: user.id })
+          .select()
+          .single();
+        if (error) throw error;
+        roleProfile = data;
       } else if (normalizedRole === "TRANSPORTER") {
-        await supabase.from("transporters").insert({ user_id: user.id });
+        const { data, error } = await supabaseAdmin
+          .from("transporters")
+          .insert({ user_id: user.id })
+          .select()
+          .single();
+        if (error) throw error;
+        roleProfile = data;
       }
     } catch (profileErr) {
-      console.error("Failed to create role profile", profileErr);
-      // not fatal; the login can still succeed but later endpoints will
-      // report "profile not found" and the client can prompt the user to
-      // complete their account setup.
+      console.error("Failed to create role profile:", profileErr);
+      return res.status(500).json({ 
+        message: "Failed to create user profile. Please contact support.",
+        error: profileErr.message 
+      });
     }
 
     // 3. Blockchain Registration logic stays same, but uses normalizedRole
@@ -100,10 +117,24 @@ const signup = async (req, res) => {
       }
     }
 
-    const token = generateToken(user);
+    const token = authData.session?.access_token || null;
+    
+    // Build properly structured user object for frontend (matching login response)
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      first_name: first_name,
+      last_name: last_name,
+      phone: phone,
+      role: normalizedRole.toLowerCase(),
+      nic_number: nic,
+      isOnboarded: false, // New users start as not onboarded
+      roleProfile: roleProfile, // Include role-specific profile data
+    };
+    
     return res
       .status(201)
-      .json({ token, user, blockchainStatus: ledgerStatus });
+      .json({ token, user: userResponse, blockchainStatus: ledgerStatus });
   } catch (err) {
     console.error("Signup error:", err);
     res.status(500).json({ message: "Server error" });
@@ -122,7 +153,7 @@ const login = async (req, res) => {
     // 1. Identity Lookup: Find the user's primary email using the unified identifier
     const { data: profile, error: profileError } = await supabase
       .from("users")
-      .select("email, role, is_onboarded") // Add is_onboarded here
+      .select("*")
       .or(
         `email.eq.${identifier},phone.eq.${identifier},nic_number.eq.${identifier}`,
       )
@@ -132,7 +163,7 @@ const login = async (req, res) => {
       return res.status(401).json({ message: "Account not found" });
     }
 
-    // 2. Use the found email to sign in via Supabase
+    // 2. Use the found email to sign in via Supabase Auth
     const { data: authData, error: authError } =
       await supabase.auth.signInWithPassword({
         email: profile.email,
@@ -143,10 +174,68 @@ const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    const userId = authData.user.id;
+    const userRole = profile.role.toLowerCase();
+
+    // 3. Fetch role-specific profile data (farmers/buyers/transporters table)
+    let roleProfile = null;
+    if (userRole === "farmer") {
+      const { data: farmerData, error: farmerError } = await supabase
+        .from("farmers")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      
+      if (farmerError) {
+        console.error("Farmer profile not found for user:", userId);
+        return res.status(401).json({ 
+          message: "Farmer profile not found. Please complete your registration." 
+        });
+      }
+      roleProfile = farmerData;
+    } else if (userRole === "buyer") {
+      const { data: buyerData, error: buyerError } = await supabase
+        .from("buyers")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      
+      if (buyerError) {
+        console.error("Buyer profile not found for user:", userId);
+        return res.status(401).json({ 
+          message: "Buyer profile not found. Please complete your registration." 
+        });
+      }
+      roleProfile = buyerData;
+    } else if (userRole === "transporter") {
+      const { data: transporterData, error: transporterError } = await supabase
+        .from("transporters")
+        .select("*")
+        .eq("user_id", userId)
+        .single();
+      
+      if (transporterError) {
+        console.error("Transporter profile not found for user:", userId);
+        return res.status(401).json({ 
+          message: "Transporter profile not found. Please complete your registration." 
+        });
+      }
+      roleProfile = transporterData;
+    }
+
+    // 4. Build comprehensive user object with flattened structure for frontend
     const user = {
-      ...authData.user,
-      role: profile.role.toLowerCase(),
-      isOnboarded: profile.is_onboarded, // Pass it to the frontend
+      id: userId,
+      email: profile.email,
+      first_name: profile.first_name || authData.user.user_metadata?.first_name,
+      last_name: profile.last_name || authData.user.user_metadata?.last_name,
+      phone: profile.phone || authData.user.phone,
+      role: userRole,
+      isOnboarded: profile.is_onboarded,
+      nic_number: profile.nic_number,
+      avatar_url: profile.avatar_url,
+      // Include role-specific profile data
+      roleProfile: roleProfile,
     };
 
     const token = authData.session.access_token;
@@ -172,42 +261,147 @@ const getMe = async (req, res) => {
       throw userError;
     }
 
-    // build a response object starting with authentication metadata
-    const result = {
-      auth: req.user,
-      profile: userRow,
-    };
-
-    // attach role-specific record if present
-    const role = req.user.role;
+    // fetch role-specific profile
+    const role = req.user.role || userRow.role?.toLowerCase();
+    let roleProfile = null;
+    
     if (role === "farmer") {
       const { data: farm, error: fErr } = await supabase
         .from("farmers")
         .select("*")
         .eq("user_id", userId)
         .single();
-      if (!fErr) result.farmer = farm;
+      if (!fErr) roleProfile = farm;
     } else if (role === "buyer") {
       const { data: buy, error: bErr } = await supabase
         .from("buyers")
         .select("*")
         .eq("user_id", userId)
         .single();
-      if (!bErr) result.buyer = buy;
+      if (!bErr) roleProfile = buy;
     } else if (role === "transporter") {
       const { data: t, error: tErr } = await supabase
         .from("transporters")
         .select("*")
         .eq("user_id", userId)
         .single();
-      if (!tErr) result.transporter = t;
+      if (!tErr) roleProfile = t;
     }
 
-    return res.json(result);
+    // Return flat structure matching login response
+    const user = {
+      id: userId,
+      email: userRow.email,
+      first_name: userRow.first_name,
+      last_name: userRow.last_name,
+      phone: userRow.phone,
+      role: role,
+      isOnboarded: userRow.is_onboarded,
+      nic_number: userRow.nic_number,
+      avatar_url: userRow.avatar_url,
+      roleProfile: roleProfile,
+    };
+
+    return res.json({ user });
   } catch (err) {
     console.error("GetMe error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-module.exports = { signup, login, getMe };
+// Get Farmer Profile - detailed profile for farmer with personal and farm details
+const getFarmerProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch user personal details
+    const { data: userRow, error: userError } = await supabase
+      .from("users")
+      .select("id, email, phone, first_name, last_name, avatar_url, created_at, nic_number")
+      .eq("id", userId)
+      .single();
+
+    if (userError || !userRow) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Fetch farmer-specific details
+    const { data: farmerRow, error: farmerError } = await supabase
+      .from("farmers")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
+
+    if (farmerError) {
+      return res.status(404).json({ message: "Farmer profile not found" });
+    }
+
+    // Build farmer full name
+    const fullName = `${userRow.first_name} ${userRow.last_name}`.trim();
+    const memberSince = new Date(userRow.created_at).toLocaleString('en-US', { 
+      year: 'numeric', 
+      month: 'short' 
+    });
+
+    // Parse primary_crops (stored as text, likely JSON or comma-separated)
+    let fruits = [];
+    if (farmerRow.primary_crops) {
+      try {
+        fruits = typeof farmerRow.primary_crops === 'string' 
+          ? JSON.parse(farmerRow.primary_crops)
+          : (Array.isArray(farmerRow.primary_crops) ? farmerRow.primary_crops : []);
+      } catch {
+        fruits = [];
+      }
+    }
+
+    // Build response with all profile details
+    const profileData = {
+      id: userRow.id,
+      user_id: userRow.id,
+      name: fullName || "User",
+      first_name: userRow.first_name,
+      last_name: userRow.last_name,
+      email: userRow.email,
+      phone: userRow.phone,
+      avatar_url: userRow.avatar_url,
+      member_since: memberSince,
+      joined: memberSince,
+      location: farmerRow.location,
+      latitude: farmerRow.latitude,
+      longitude: farmerRow.longitude,
+      farm_size: farmerRow.farm_size,
+      reputation: farmerRow.reputation,
+      proof_of_farming_url: farmerRow.proof_of_farming_url,
+      primary_crops: fruits,
+      grows_these_fruits: fruits,
+      personal: {
+        id: userRow.id,
+        email: userRow.email,
+        phone: userRow.phone,
+        first_name: userRow.first_name,
+        last_name: userRow.last_name,
+        full_name: fullName,
+        avatar_url: userRow.avatar_url,
+        joined: memberSince,
+      },
+      farm: {
+        user_id: farmerRow.user_id,
+        location: farmerRow.location,
+        latitude: farmerRow.latitude,
+        longitude: farmerRow.longitude,
+        farm_size: farmerRow.farm_size,
+        reputation: farmerRow.reputation,
+        proof_of_farming_url: farmerRow.proof_of_farming_url,
+        primary_crops: fruits,
+      },
+    };
+
+    return res.json(profileData);
+  } catch (err) {
+    console.error("Get farmer profile error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+module.exports = { signup, login, getMe, getFarmerProfile };

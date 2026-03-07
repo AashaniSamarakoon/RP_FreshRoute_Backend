@@ -64,20 +64,28 @@ async function getFreshForecastsForSMS() {
 
 /**
  * Get farmers with SMS alerts enabled
- * @returns {Promise<Array>} Farmers {id, name, phone, role, sms_alerts_enabled, sms_frequency}
+ * @returns {Promise<Array>} Farmers {id, first_name, last_name, phone, role, sms_alerts_enabled, sms_frequency}
  */
 async function getSMSSubscribedFarmers() {
   try {
+    console.log("[SMS Debug] Querying farmers with SMS alerts enabled...");
+    
     const { data, error } = await supabase
       .from("users")
-      .select("id, name, phone, role, sms_alerts_enabled, sms_frequency")
-      .eq("role", "farmer")
+      .select("id, first_name, last_name, phone, role, sms_alerts_enabled, sms_frequency")
+      .eq("role", "FARMER")
       .eq("sms_alerts_enabled", true)
       .not("phone", "is", null);
 
     if (error) {
+      console.error("[SMS Debug] Query error:", error);
       console.error("Failed to fetch farmers:", error.message);
       return [];
+    }
+
+    console.log(`[SMS Debug] Found ${data?.length || 0} farmers with SMS alerts enabled`);
+    if (data && data.length > 0) {
+      console.log("[SMS Debug] Sample farmer:", JSON.stringify(data[0], null, 2));
     }
 
     return data || [];
@@ -90,7 +98,7 @@ async function getSMSSubscribedFarmers() {
 /**
  * Compile SMS batch: group forecasts by fruit and send to each farmer
  * @param {Array} forecasts - Raw forecast rows {fruit, target, date, forecast_value}
- * @param {Array} farmers - Raw farmer rows {id, name, phone}
+ * @param {Array} farmers - Raw farmer rows {id, first_name, last_name, phone}
  * @returns {Array} {farmer_id, phone, message} objects
  */
 function compileSMSBatch(forecasts, farmers) {
@@ -114,7 +122,8 @@ function compileSMSBatch(forecasts, farmers) {
   // Create one message per farmer with all fruit forecasts
   farmers.forEach(farmer => {
     let combinedMsg = `📱 FreshRoute Daily Forecast Alert\n`;
-    combinedMsg += `Hello ${farmer.name}!\n\n`;
+    const farmerName = `${farmer.first_name} ${farmer.last_name}`.trim();
+    combinedMsg += `Hello ${farmerName}!\n\n`;
 
     Object.entries(forecastsByFruit).forEach(([fruit, values], idx) => {
       if (idx > 0) combinedMsg += "\n---\n";
@@ -144,13 +153,15 @@ function compileSMSBatch(forecasts, farmers) {
 /**
  * Log SMS send attempt to sms_logs table
  */
-async function logSMSSend(farmer_id, phone, status, error_msg = null) {
+async function logSMSSend(farmer_id, phone, status, error_msg = null, message_type = 'forecast', message_text = null) {
   try {
     const { error } = await supabase
       .from("sms_logs")
       .insert({
         farmer_id,
         phone,
+        message_type,
+        message: message_text,
         status,
         error_message: error_msg,
         sent_at: new Date().toISOString(),
@@ -162,7 +173,7 @@ async function logSMSSend(farmer_id, phone, status, error_msg = null) {
       return;
     }
 
-    console.log(`📝 SMS log created for farmer ${farmer_id}: ${phone}`);
+    console.log(`📝 SMS log created for farmer ${farmer_id}: ${phone} (${message_type})`);
   } catch (err) {
     console.warn("⚠️ SMS logging error:", err.message);
   }
