@@ -770,6 +770,19 @@ async function importDambullaPrices() {
     // Normalize captured_at to today's deterministic timestamp
     rows = rows.map(r => ({ ...r, captured_at: capturedAt }));
 
+    // Normalize fruit names to match fruit table
+    const fruitNameMapping = {
+      "mango- tjc": "Mango",
+      "banana - abul": "Banana",
+      "banana": "Banana",
+      "mango": "Mango",
+      "pineapple": "Pineapple"
+    };
+    rows = rows.map(row => ({
+      ...row,
+      fruit_name: fruitNameMapping[row.fruit_name.toLowerCase()] || row.fruit_name
+    }));
+
     // Get fruit IDs from DB
     const { data: fruits, error: fruitErr } = await supabase
       .from("fruits")
@@ -784,6 +797,10 @@ async function importDambullaPrices() {
       ...row,
       fruit_id: fruitMap[row.fruit_name] || null,
     }));
+
+    // Filter to only desired fruits
+    const desiredFruits = ["Mango", "Banana", "Pineapple"];
+    const filteredRows = enrichedRows.filter(row => desiredFruits.includes(row.fruit_name));
 
     // Check which fruits already exist for today to avoid duplicates
     const todayDate = capturedAt.slice(0, 10);
@@ -800,7 +817,7 @@ async function importDambullaPrices() {
     const existingFruits = new Set(existingPrices?.map(row => row.fruit_name) || []);
 
     // Filter out fruits that already exist for today
-    const newRowsOnly = enrichedRows.filter(row => !existingFruits.has(row.fruit_name));
+    const newRowsOnly = filteredRows.filter(row => !existingFruits.has(row.fruit_name));
 
     console.log(`[Dambulla Import] Found ${existingFruits.size} existing fruits for today, ${newRowsOnly.length} new fruits to add`);
 

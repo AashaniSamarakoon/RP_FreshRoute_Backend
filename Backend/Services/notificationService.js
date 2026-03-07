@@ -65,7 +65,7 @@ async function notifyPriceUpdate(fruit, price, economicCenter, trend = null) {
     const { data: farmers, error: farmersErr } = await supabase
       .from("users")
       .select("id")
-      .eq("role", "farmer")
+      .eq("role", "FARMER")
       .eq("sms_alerts_enabled", true);
 
     if (farmersErr) throw farmersErr;
@@ -100,7 +100,7 @@ async function notifyForecast(fruit, forecastValue, date) {
     const { data: farmers, error: farmersErr } = await supabase
       .from("users")
       .select("id")
-      .eq("role", "farmer")
+      .eq("role", "FARMER")
       .eq("sms_alerts_enabled", true);
 
     if (farmersErr) throw farmersErr;

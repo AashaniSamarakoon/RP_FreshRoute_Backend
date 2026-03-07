@@ -105,11 +105,30 @@ async function sendBatchSMS(recipients) {
   const results = await Promise.allSettled(
     recipients.map((r) => sendSMS(r.phone, r.message))
   );
-  return results.map((r, i) => ({
-    phone: recipients[i].phone,
-    status: r.status,
-    result: r.value || r.reason?.message,
-  }));
+  return results.map((r, i) => {
+    if (r.status === "rejected") {
+      return {
+        phone: recipients[i].phone,
+        status: "rejected",
+        result: r.reason?.message || "Unknown SMS error",
+      };
+    }
+
+    const providerStatus = r.value?.status;
+    if (providerStatus === "skipped") {
+      return {
+        phone: recipients[i].phone,
+        status: "skipped",
+        result: r.value,
+      };
+    }
+
+    return {
+      phone: recipients[i].phone,
+      status: "fulfilled",
+      result: r.value,
+    };
+  });
 }
 
 module.exports = { sendSMS, sendBatchSMS, formatPhoneNumber };
