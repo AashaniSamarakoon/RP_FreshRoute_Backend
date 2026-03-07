@@ -7,10 +7,10 @@ export class StockContract extends BaseContract {
     // --- 1. CREATE: Accepts Array of Hashes as JSON string ---
     @Transaction()
     async CreateHarvest(
-        ctx: Context, 
-        harvestId: string, 
-        fruitId: string, 
-        quantity: string, 
+        ctx: Context,
+        harvestId: string,
+        fruitId: string,
+        quantity: string,
         pricePerUnit: string,
         imageHashesJson: string, // JSON string of array, e.g. '["hash1","hash2"]'
         grade: string,           // e.g. 'A' | 'B' | 'C' — pass '' if unknown
@@ -58,10 +58,10 @@ export class StockContract extends BaseContract {
     // --- 2. UPDATE: Accepts Array of Hashes as JSON string ---
     @Transaction()
     async UpdateHarvest(
-        ctx: Context, 
-        harvestId: string, 
-        newQuantity: string, 
-        newPrice: string, 
+        ctx: Context,
+        harvestId: string,
+        newQuantity: string,
+        newPrice: string,
         status: string,
         newImageHashesJson: string, // JSON string of array
         grade: string,              // pass '' to keep existing
@@ -69,7 +69,7 @@ export class StockContract extends BaseContract {
     ): Promise<void> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
-        
+
         const harvest = JSON.parse(data.toString());
         const client = this.getClient(ctx);
 
@@ -79,7 +79,7 @@ export class StockContract extends BaseContract {
         harvest.availableQuantity = parseInt(newQuantity);
         harvest.pricePerUnit = parseFloat(newPrice);
         harvest.status = status;
-        
+
         // Parse and update hashes if valid JSON array is sent
         try {
             const newImageHashes = JSON.parse(newImageHashesJson || '[]');
@@ -90,9 +90,9 @@ export class StockContract extends BaseContract {
             // Keep existing hashes if parsing fails
         }
 
-        if (grade)       harvest.grade       = grade;
+        if (grade) harvest.grade = grade;
         if (harvestDate) harvest.harvestDate = harvestDate;
-        
+
         const txTimestamp = ctx.stub.getTxTimestamp();
         harvest.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
@@ -103,7 +103,7 @@ export class StockContract extends BaseContract {
     async DeleteHarvest(ctx: Context, harvestId: string): Promise<void> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
-        
+
         const harvest = JSON.parse(data.toString());
         const client = this.getClient(ctx);
 
@@ -113,13 +113,13 @@ export class StockContract extends BaseContract {
     }
 
     // --- QUERY FUNCTIONS FOR DASHBOARD ---
-    
+
     @Transaction(false)
     async GetAllHarvests(ctx: Context): Promise<string> {
         const allResults = [];
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
-        
+
         while (!result.done) {
             const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
             let record;

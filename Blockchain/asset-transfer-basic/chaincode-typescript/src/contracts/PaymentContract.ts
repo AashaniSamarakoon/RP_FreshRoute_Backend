@@ -257,9 +257,9 @@ export class PaymentContract extends BaseContract {
         payment.status = 'PENDING_RELEASE';
         payment.qualityConfirmedBy = transporterId;
         payment.qualityConfirmedAt = now;
-        payment.farmerShareAmount    = parseFloat(farmerShareAmount    || '0');
+        payment.farmerShareAmount = parseFloat(farmerShareAmount || '0');
         payment.transporterFeeAmount = parseFloat(transporterFeeAmount || '0');
-        payment.platformFeeAmount    = parseFloat(platformFeeAmount    || '0');
+        payment.platformFeeAmount = parseFloat(platformFeeAmount || '0');
         payment.updatedAt = now;
 
         order.paymentStatus = 'PENDING_RELEASE';
