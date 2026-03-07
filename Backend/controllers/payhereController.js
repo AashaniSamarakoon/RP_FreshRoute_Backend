@@ -102,8 +102,8 @@ const preapprovalInit = async (req, res) => {
       return res.status(500).json({ message: "Failed to initialise pre-approval" });
     }
 
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:4000";
-    const formUrl = `${backendUrl}/payhere/preapproval-form/${orderId}`;
+    const publicUrl = process.env.PUBLIC_URL || "https://public.freshroute.lk";
+    const formUrl = `${publicUrl}/payhere/preapproval-form/${orderId}`;
 
     console.log(`[PayHere] Preapproval initiated for order ${orderId}`);
 
@@ -141,7 +141,8 @@ const preapprovalForm = async (req, res) => {
   ]);
 
   const merchantId = process.env.PAYHERE_MERCHANT_ID;
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:4000";
+  const backendUrl = process.env.BACKEND_URL;
+  const publicUrl = process.env.PUBLIC_URL;
 
   const amount = "10.00"; // PayHere pre-approval nominal charge
   const currency = "LKR";
@@ -168,8 +169,8 @@ const preapprovalForm = async (req, res) => {
     <p>Please wait while we redirect you to complete the pre-approval.</p>
     <form id="ph" method="POST" action="${PAYHERE_BASE_URL}/pay/preapprove" referrerpolicy="unsafe-url">
       ${field("merchant_id", merchantId)}
-      ${field("return_url", `${backendUrl}/payhere/preapproval-return?orderId=${orderId}&status=success`)}
-      ${field("cancel_url", `${backendUrl}/payhere/preapproval-return?orderId=${orderId}&status=cancel`)}
+      ${field("return_url", `${publicUrl}/payhere/preapproval-return?orderId=${orderId}&status=success`)}
+      ${field("cancel_url", `${publicUrl}/payhere/preapproval-return?orderId=${orderId}&status=cancel`)}
       ${field("notify_url", `${backendUrl}/api/payhere/preapproval-notify`)}
       ${field("first_name", userData?.first_name || "Buyer")}
       ${field("last_name", userData?.last_name || "")}

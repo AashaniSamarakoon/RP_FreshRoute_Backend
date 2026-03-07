@@ -14,7 +14,7 @@ export class OrderContract extends BaseContract {
 
         // Generate timestamp
         const txTimestamp = ctx.stub.getTxTimestamp();
-        const createdAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        const createdAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         // Create initial order asset (not tied to specific harvest yet)
         const order = {
@@ -59,8 +59,8 @@ export class OrderContract extends BaseContract {
 
         // 3. Generate timestamp and expiry (24 hours from now)
         const txTimestamp = ctx.stub.getTxTimestamp();
-        const createdAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
-        const expiresAt = new Date(txTimestamp.seconds.toNumber() * 1000 + 24 * 60 * 60 * 1000).toISOString();
+        const createdAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
+        const expiresAt = new Date(Number(txTimestamp.seconds) * 1000 + 24 * 60 * 60 * 1000).toISOString();
 
         // 4. Create proposal asset
         const proposal = {
@@ -104,14 +104,14 @@ export class OrderContract extends BaseContract {
         if (proposal.status !== 'PENDING_BUYER') throw new Error('Proposal is not pending buyer approval');
 
         // 4. Check if proposal has expired
-        const now = new Date(ctx.stub.getTxTimestamp().seconds.toNumber() * 1000);
+        const now = new Date(Number(ctx.stub.getTxTimestamp().seconds) * 1000);
         const expiresAt = new Date(proposal.expiresAt);
         if (now > expiresAt) throw new Error('Proposal has expired');
 
         // 5. Update proposal status
         proposal.status = 'PENDING_FARMER';
         const txTimestamp = ctx.stub.getTxTimestamp();
-        proposal.updatedAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        proposal.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         // 6. Update order status
         const orderData = await ctx.stub.getState(proposal.orderId);
@@ -141,14 +141,14 @@ export class OrderContract extends BaseContract {
         if (proposal.status !== 'PENDING_FARMER') throw new Error('Proposal is not pending farmer response');
 
         // 4. Check if proposal has expired
-        const now = new Date(ctx.stub.getTxTimestamp().seconds.toNumber() * 1000);
+        const now = new Date(Number(ctx.stub.getTxTimestamp().seconds) * 1000);
         const expiresAt = new Date(proposal.expiresAt);
         if (now > expiresAt) throw new Error('Proposal has expired');
 
         // 5. Update proposal status
         proposal.status = 'ACCEPTED';
         const txTimestamp = ctx.stub.getTxTimestamp();
-        proposal.acceptedAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        proposal.acceptedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
         proposal.updatedAt = proposal.acceptedAt;
 
         // 6. Update order status to CONFIRMED
@@ -193,7 +193,7 @@ export class OrderContract extends BaseContract {
         // 4. Update proposal status
         proposal.status = 'REJECTED';
         const txTimestamp = ctx.stub.getTxTimestamp();
-        proposal.rejectedAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        proposal.rejectedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
         proposal.updatedAt = proposal.rejectedAt;
 
         // 5. Release reserved stock back to available
@@ -229,14 +229,14 @@ export class OrderContract extends BaseContract {
         }
 
         // 3. Check if actually expired
-        const now = new Date(ctx.stub.getTxTimestamp().seconds.toNumber() * 1000);
+        const now = new Date(Number(ctx.stub.getTxTimestamp().seconds) * 1000);
         const expiresAt = new Date(proposal.expiresAt);
         if (now <= expiresAt) throw new Error('Proposal has not expired yet');
 
         // 4. Update proposal status
         proposal.status = 'EXPIRED';
         const txTimestamp = ctx.stub.getTxTimestamp();
-        proposal.expiredAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        proposal.expiredAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
         proposal.updatedAt = proposal.expiredAt;
 
         // 5. Release reserved stock back to available (if any)
@@ -278,7 +278,7 @@ export class OrderContract extends BaseContract {
         // Update order status
         order.status = 'CANCELLED';
         const txTimestamp = ctx.stub.getTxTimestamp();
-        order.cancelledAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        order.cancelledAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
         order.updatedAt = order.cancelledAt;
 
         // If order was CONFIRMED, release the stock back
@@ -325,7 +325,7 @@ export class OrderContract extends BaseContract {
 
         order.quantity = qty;
         const txTimestamp = ctx.stub.getTxTimestamp();
-        order.updatedAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        order.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
     }

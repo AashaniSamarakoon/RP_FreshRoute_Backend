@@ -18,7 +18,7 @@ export class StockContract extends BaseContract {
         if (client.role !== 'farmer') throw new Error('Only farmers can create harvests');
 
         const txTimestamp = ctx.stub.getTxTimestamp();
-        const createdAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        const createdAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         // Parse the JSON string to array
         let imageHashes: string[] = [];
@@ -85,7 +85,7 @@ export class StockContract extends BaseContract {
         }
         
         const txTimestamp = ctx.stub.getTxTimestamp();
-        harvest.updatedAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        harvest.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         await ctx.stub.putState(harvestId, Buffer.from(JSON.stringify(harvest)));
     }
@@ -167,7 +167,7 @@ export class StockContract extends BaseContract {
             const timestamp = result.value.timestamp;
             const record = {
                 txId: result.value.txId,
-                timestamp: timestamp ? new Date(timestamp.seconds.toNumber() * 1000).toISOString() : null,
+                timestamp: timestamp ? new Date(Number(timestamp.seconds) * 1000).toISOString() : null,
                 isDelete: result.value.isDelete,
                 value: Buffer.from(result.value.value.toString()).toString('utf8')
             };

@@ -250,4 +250,36 @@ const updateStock = async (req, res) => {
   }
 };
 
-module.exports = { submitPredictStock, getStockById, updateStock };
+// GET /api/farmer/estimated-stocks  – list all harvests owned by the logged-in farmer
+const getEstimatedStocks = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // Optional query params for filtering
+    const { status, fruit_type, grade } = req.query;
+
+    let query = supabase
+      .from("estimated_stock")
+      .select(
+        "id, fruit_type, variant, quantity, grade, estimated_harvest_date, price_per_kg, image_url, status, created_at",
+      )
+      .eq("farmer_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (status) query = query.eq("status", status);
+    if (fruit_type) query = query.ilike("fruit_type", `%${fruit_type}%`);
+    if (grade) query = query.eq("grade", grade);
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(error.message);
+
+    return res.status(200).json({ success: true, stocks: data });
+  } catch (err) {
+    console.error("GetEstimatedStocks Error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+module.exports = { submitPredictStock, getStockById, updateStock, getEstimatedStocks };

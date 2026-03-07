@@ -55,7 +55,6 @@ const placeOrder = async (req, res) => {
       delivery_location,
       latitude,
       longitude,
-      target_price,
     } = req.body;
 
     // 2. Validate
@@ -78,7 +77,6 @@ const placeOrder = async (req, res) => {
           delivery_location,
           latitude,
           longitude,
-          target_price: target_price || null, // Save if provided
           status: "OPEN", // Initial status
         },
       ])

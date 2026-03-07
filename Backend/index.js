@@ -81,6 +81,11 @@ app.use((req, res, next) => {
   next();
 });
 
+// Root endpoint
+app.get("/", (req, res) => {
+  res.send("FreshRoute API is running securely via Cloudflare!");
+});
+
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString(), port: 4000 });

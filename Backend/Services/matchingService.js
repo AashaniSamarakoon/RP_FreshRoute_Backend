@@ -1,4 +1,4 @@
-const { supabase } = require("../utils/supabaseClient");
+const { supabase, supabaseAdmin } = require("../utils/supabaseClient");
 
 // ─── Configurable Weights ─────────────────────────────────────────────────────
 const W_LOC = 0.35; // Distance from farmer → buyer delivery location (35%)
@@ -185,7 +185,7 @@ const createMatchProposal = async ({
   distanceKm,
 }) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("match_proposals")
       .insert({
         order_id: orderId,

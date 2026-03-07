@@ -18,6 +18,13 @@ const {
   updateSMSPreferences,
 } = require("../../controllers/farmer/smsController");
 const {
+  getEstimatedStocks,
+} = require("../../controllers/farmer/predictStockController");
+const {
+  getBatchHistory,
+  getVerificationStatus,
+} = require("../../controllers/farmer/blockchainController");
+const {
   getNotifications: getNotificationsNew,
   getNotificationById,
   markAsRead,
@@ -56,6 +63,13 @@ router.delete("/notifications/:id", deleteNotification);
 // Legacy notification endpoints (kept for backward compatibility)
 router.get("/old-notifications", getNotifications);
 router.patch("/old-notifications/:id/read", markNotificationRead);
+
+// Estimated stocks (harvests) for the logged-in farmer
+router.get("/estimated-stocks", getEstimatedStocks);
+
+// Blockchain – per-stock history & verification (farmer-scoped)
+router.get("/blockchain/history/:stockId", getBatchHistory);
+router.get("/blockchain/verify/:stockId", getVerificationStatus);
 
 // Feedback
 router.get("/feedback", getFeedback);

@@ -29,17 +29,12 @@ const ORDER_SELECT = `
   delivery_location,
   latitude,
   longitude,
-  target_price,
   status,
   payment_status,
   total_amount,
   selected_farmer_id,
   harvest_id,
   blockchain_status,
-  transporter_id,
-  quality_confirmed_at,
-  delivered_at,
-  delivery_notes,
   created_at,
   updated_at
 `;
