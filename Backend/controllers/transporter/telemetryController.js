@@ -43,7 +43,7 @@ async function checkTemperatureSafety(vehicleId, currentTemp) {
   // B. Get Specs for these orders
   const { data: orders } = await supabase
     .from("orders")
-    .select(`id, fruit_variant`)
+    .select(`id, fruit_variant, placed_order_id`)
     .in("id", orderIds);
 
   if (!orders?.length) return;
@@ -69,6 +69,9 @@ async function checkTemperatureSafety(vehicleId, currentTemp) {
         alert_type: "HIGH_TEMP",
         message: `CRITICAL: ${order.fruit_variant} is at ${currentTemp}°C (Max: ${spec.max_safe_temp_c}°C)`,
         value_at_time: currentTemp,
+        max_safe_temp_c: spec.max_safe_temp_c,
+        optimal_temp_c: spec.optimal_temp_c,
+        placed_order_id: order.placed_order_id,
       });
     }
   }

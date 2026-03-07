@@ -132,7 +132,7 @@ exports.getJobDetails = async (req, res) => {
       const { data: specsData, error: specError } = await supabase
         .from("fruit_specs")
         .select(
-          "variant_name, optimal_temp_c, max_safe_temp_c, force_refrigeration",
+          "variant_name, optimal_temp_c, max_safe_temp_c, force_refrigeration, handling_guidelines",
         )
         .in("variant_name", variants);
 
