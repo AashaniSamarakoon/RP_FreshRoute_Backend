@@ -57,6 +57,7 @@ const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
 
 const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
+const publicRoutes = require("./routes/common/publicRoutes");
 const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
 const paymentRoutes = require("./routes/buyer/paymentRoutes");
 const payhereRoutes = require("./routes/payhereRoutes");
@@ -182,6 +183,9 @@ app.use("/api/prices/freshroute", authMiddleware, freshRoutePricesRouter);
 
 // shared forecast endpoint (allows any authenticated user) mounted at fixed path
 app.use("/api/forecast", authMiddleware, forecastRouter);
+
+// Public Transparency Portal — no auth middleware, rate-limited at route level
+app.use("/api/public", publicRoutes);
 
 // Auth routes
 app.use("/api/auth", authRoutes);

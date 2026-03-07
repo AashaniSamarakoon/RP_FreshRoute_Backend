@@ -66,7 +66,7 @@ createChannel() {
 	
 	# Join orderer3
 	set -x
-	osnadmin channel join --channelID $CHANNEL_NAME --config-block ./channel-artifacts/${CHANNEL_NAME}.block -o localhost:7057 --ca-file "$ORDERER_CA" --client-cert "${PWD}/organizations/ordererOrganizations/freshroute.com/orderers/orderer3.freshroute.com/tls/server.crt" --client-key "${PWD}/organizations/ordererOrganizations/freshroute.com/orderers/orderer3.freshroute.com/tls/server.key" >&log.txt
+	osnadmin channel join --channelID $CHANNEL_NAME --config-block ./channel-artifacts/${CHANNEL_NAME}.block -o localhost:7058 --ca-file "$ORDERER_CA" --client-cert "${PWD}/organizations/ordererOrganizations/freshroute.com/orderers/orderer3.freshroute.com/tls/server.crt" --client-key "${PWD}/organizations/ordererOrganizations/freshroute.com/orderers/orderer3.freshroute.com/tls/server.key" >&log.txt
 	res=$?
 	{ set +x; } 2>/dev/null
 }

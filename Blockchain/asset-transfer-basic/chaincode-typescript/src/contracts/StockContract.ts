@@ -12,7 +12,9 @@ export class StockContract extends BaseContract {
         fruitId: string, 
         quantity: string, 
         pricePerUnit: string,
-        imageHashesJson: string // JSON string of array, e.g. '["hash1","hash2"]'
+        imageHashesJson: string, // JSON string of array, e.g. '["hash1","hash2"]'
+        grade: string,           // e.g. 'A' | 'B' | 'C' — pass '' if unknown
+        harvestDate: string      // ISO date e.g. '2026-03-07' — pass '' if unknown
     ): Promise<void> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can create harvests');
@@ -38,6 +40,8 @@ export class StockContract extends BaseContract {
             pricePerUnit: parseFloat(pricePerUnit),
             status: 'FRESH',
             imageHashes: imageHashes, // <--- Storing multiple proofs
+            grade: grade || '',
+            harvestDate: harvestDate || '',
             createdAt: createdAt
         };
 
@@ -59,7 +63,9 @@ export class StockContract extends BaseContract {
         newQuantity: string, 
         newPrice: string, 
         status: string,
-        newImageHashesJson: string // JSON string of array
+        newImageHashesJson: string, // JSON string of array
+        grade: string,              // pass '' to keep existing
+        harvestDate: string         // pass '' to keep existing
     ): Promise<void> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
@@ -83,6 +89,9 @@ export class StockContract extends BaseContract {
         } catch (e) {
             // Keep existing hashes if parsing fails
         }
+
+        if (grade)       harvest.grade       = grade;
+        if (harvestDate) harvest.harvestDate = harvestDate;
         
         const txTimestamp = ctx.stub.getTxTimestamp();
         harvest.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();

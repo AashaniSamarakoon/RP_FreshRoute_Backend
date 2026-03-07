@@ -226,7 +226,14 @@ export class PaymentContract extends BaseContract {
      * Called from deliveryController.confirmQualityAndPickup.
      */
     @Transaction()
-    async ReleasePayment(ctx: Context, orderId: string, transporterId: string): Promise<void> {
+    async ReleasePayment(
+        ctx: Context,
+        orderId: string,
+        transporterId: string,
+        farmerShareAmount: string,      // farmer's base price at acceptance
+        transporterFeeAmount: string,   // delivery fee at acceptance
+        platformFeeAmount: string       // service charge at acceptance
+    ): Promise<void> {
         const client = this.getClient(ctx);
         if (client.role !== 'transporter') throw new Error('Only transporters can release payments after quality check');
 
@@ -250,6 +257,9 @@ export class PaymentContract extends BaseContract {
         payment.status = 'PENDING_RELEASE';
         payment.qualityConfirmedBy = transporterId;
         payment.qualityConfirmedAt = now;
+        payment.farmerShareAmount    = parseFloat(farmerShareAmount    || '0');
+        payment.transporterFeeAmount = parseFloat(transporterFeeAmount || '0');
+        payment.platformFeeAmount    = parseFloat(platformFeeAmount    || '0');
         payment.updatedAt = now;
 
         order.paymentStatus = 'PENDING_RELEASE';

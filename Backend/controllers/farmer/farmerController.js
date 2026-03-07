@@ -1,4 +1,4 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const {
   computeFreshRoutePrice,
 } = require("../../Services/farmer/pricingService");

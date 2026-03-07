@@ -25,6 +25,10 @@ const {
   getVerificationStatus,
 } = require("../../controllers/farmer/blockchainController");
 const {
+  updateOrderStatusPacking,
+  updateOrderStatusReady,
+} = require("../../controllers/farmer/farmerOrderController");
+const {
   getNotifications: getNotificationsNew,
   getNotificationById,
   markAsRead,
@@ -70,6 +74,10 @@ router.get("/estimated-stocks", getEstimatedStocks);
 // Blockchain – per-stock history & verification (farmer-scoped)
 router.get("/blockchain/history/:stockId", getBatchHistory);
 router.get("/blockchain/verify/:stockId", getVerificationStatus);
+
+// Order lifecycle status updates (PAID_PENDING_DELIVERY → PACKING → READY_FOR_PICKUP)
+router.patch("/orders/:orderId/packing", updateOrderStatusPacking);
+router.patch("/orders/:orderId/ready",   updateOrderStatusReady);
 
 // Feedback
 router.get("/feedback", getFeedback);

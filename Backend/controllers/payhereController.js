@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { supabase } = require("../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../utils/supabaseClient");
 
 // ---------------------------------------------------------------------------
 // Shared helpers

@@ -1,4 +1,4 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { calculateDistanceKm } = require("../../utils/logisticsUtils");
 
 // ─── Shared pricing helpers (mirrors orderController) ────────────────────────
@@ -219,7 +219,7 @@ const acceptProposal = async (req, res) => {
     );
     const totalAmount = breakdown.totalPrice;
 
-    // 6. Update order status to AWAITING_PAYMENT
+    // 6. Update order status to AWAITING_PAYMENT (persist price breakdown for transparency portal)
     await supabase
       .from("placed_orders")
       .update({
@@ -227,7 +227,13 @@ const acceptProposal = async (req, res) => {
         selected_farmer_id: farmerId,
         harvest_id: proposal.stock_id,
         total_amount: totalAmount,
+        unit_price: unit,
+        distance_km: distance,
+        farmer_share_amount:    breakdown.basePrice,
+        transporter_fee_amount: breakdown.deliveryFee,
+        platform_fee_amount:    breakdown.serviceCharge,
         blockchain_status: blockchainStatus,
+        farmer_accepted_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", proposal.order_id);

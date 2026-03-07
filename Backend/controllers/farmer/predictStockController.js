@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { onNewStockAdded } = require("../../Services/matchingService");
 const { uploadImageToSupabase } = require("../../utils/uploadUtils");
@@ -127,13 +127,14 @@ const submitPredictStock = async (req, res) => {
         `${fruit_type}_${variant}`,
         quantity.toString(),
         (price_per_unit || "0").toString(),
-        JSON.stringify(imageHashes), // Pass array as string if CC expects string, or update CC to accept string[]
+        JSON.stringify(imageHashes),
+        grade || "",
+        estimated_harvest_date || new Date().toISOString().split("T")[0],
       );
-      // NOTE: If you updated Chaincode to accept string[], pass: ...imageHashes
-      // If Chaincode expects a single string arg, use: JSON.stringify(imageHashes)
 
       await close();
       blockchainStatus = "Success";
+      console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id}`);
     } catch (bcError) {
       console.error("Blockchain Failed:", bcError);
       blockchainStatus = "Failed";
@@ -233,6 +234,7 @@ const updateStock = async (req, res) => {
 
       await close();
       blockchainStatus = "Success";
+      console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId}`);
     } catch (bcError) {
       console.error("Blockchain Update Failed:", bcError);
       blockchainStatus = "Failed";

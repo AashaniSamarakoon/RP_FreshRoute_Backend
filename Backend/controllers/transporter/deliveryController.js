@@ -1,4 +1,4 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const axios = require("axios");
 
@@ -138,6 +138,45 @@ const confirmQualityAndPickup = async (req, res) => {
       // Continue anyway
     }
 
+    // Read price breakdown from order (persisted at proposal acceptance)
+    const farmerShare    = order.farmer_share_amount    || 0;
+    const transporterFee = order.transporter_fee_amount || 0;
+    const platformFee    = order.platform_fee_amount    || 0;
+
+    // Quality failure path — refund buyer, do not release to farmer
+    const qualityFailed = stockCondition === "POOR" || parseFloat(qualityScore) < 2.0;
+    if (qualityFailed) {
+      try {
+        const { contract, close } = await getContract(userId, "PaymentContract");
+        await contract.submitTransaction("RefundPayment", `ORDER_${orderId}`, "Poor quality at pickup");
+        await close();
+      } catch (bcErr) {
+        console.error("[Blockchain] RefundPayment failed:", bcErr.message);
+      }
+
+      await supabase.from("placed_orders").update({
+        status: "QUALITY_FAILED",
+        payment_status: "REFUND_PENDING",
+        quality_confirmed_at: new Date().toISOString(),
+        pickup_notes: pickupNotes,
+        updated_at: new Date().toISOString(),
+      }).eq("id", orderId);
+
+      await supabase.from("payments").update({
+        status: "REFUND_PENDING",
+        updated_at: new Date().toISOString(),
+      }).eq("order_id", orderId);
+
+      return res.status(200).json({
+        success: true,
+        orderId,
+        qualityScore,
+        orderStatus: "QUALITY_FAILED",
+        paymentStatus: "REFUND_PENDING",
+        message: "Quality check failed. Buyer refund initiated.",
+      });
+    }
+
     // Initiate payment release on blockchain
     const blockchainOrderId = `ORDER_${orderId}`;
     const blockchainTransporterId = `TRANSPORTER_${transporterId}`;
@@ -149,6 +188,9 @@ const confirmQualityAndPickup = async (req, res) => {
           "ReleasePayment",
           blockchainOrderId,
           blockchainTransporterId,
+          farmerShare.toString(),
+          transporterFee.toString(),
+          platformFee.toString(),
         );
         console.log(
           "[Blockchain] Payment marked for release after quality check at pickup",
@@ -208,6 +250,14 @@ const confirmQualityAndPickup = async (req, res) => {
         updated_at: new Date().toISOString(),
       })
       .eq("id", orderId);
+
+    // Generate QR / public verify URL (triggered at quality-confirmed pickup)
+    if (order.harvest_id) {
+      await supabase.from("placed_orders").update({
+        public_verify_url: `https://app.freshroute.lk/verify/${order.harvest_id}`,
+        qr_generated_at:   new Date().toISOString(),
+      }).eq("id", orderId);
+    }
 
     // Record blockchain confirmation of payment release
     try {

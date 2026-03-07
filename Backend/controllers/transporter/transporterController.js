@@ -1,4 +1,4 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 
 // GET /api/transporter/jobs
 // exports.getMyJobs = async (req, res) => {
