@@ -20,17 +20,23 @@ async function fetchUnitPrice(fruit, variant, grade, date) {
 
 /**
  * Calculates the price breakdown for an order given a unit price.
+ * This is the BUYER view, so it includes:
+ *   - platform service fee (2% of base price)
+ *   - delivery fee based on distance
+ *
  * @param {{ quantity: number, distance_km?: number }} order
  * @param {number|null} unitPrice  LKR per kg
+ * @returns {{unitPrice:number|null, basePrice:number|null, serviceCharge:number|null, platformFeeRate:number, deliveryFee:number, totalPrice:number|null}}
  */
 function calculatePrice(order, unitPrice) {
   const basePrice = unitPrice != null ? unitPrice * order.quantity : null;
-  const serviceCharge = basePrice != null ? basePrice * 0.01 : null;
+  const platformFeeRate = 0.02; // buyers pay 2% platform fee
+  const serviceCharge = basePrice != null ? basePrice * platformFeeRate : null;
   const distanceKm = order.distance_km || 0;
   const deliveryFee = distanceKm * 35;
   const totalPrice =
     basePrice != null ? basePrice + (serviceCharge || 0) + deliveryFee : null;
-  return { unitPrice, basePrice, serviceCharge, deliveryFee, totalPrice };
+  return { unitPrice, basePrice, serviceCharge, platformFeeRate, deliveryFee, totalPrice };
 }
 
 /**
@@ -41,13 +47,16 @@ function calculatePrice(order, unitPrice) {
  *
  * @param {{ quantity: number }} order
  * @param {number|null} unitPrice  LKR per kg
+ * @returns {{unitPrice:number|null, grossEarning:number|null, platformFee:number|null, platformFeeRate:number, farmerEarning:number|null}}
  */
 function calculateFarmerPrice(order, unitPrice) {
   const grossEarning = unitPrice != null ? unitPrice * order.quantity : null;
-  const platformFee  = grossEarning != null ? grossEarning * 0.014 : null;
+  // platform fee is always 1.4% of gross earning; expose rate for clients
+  const platformFeeRate = 0.014;
+  const platformFee  = grossEarning != null ? grossEarning * platformFeeRate : null;
   const farmerEarning =
     grossEarning != null ? grossEarning - platformFee : null;
-  return { unitPrice, grossEarning, platformFee, farmerEarning };
+  return { unitPrice, grossEarning, platformFee, platformFeeRate, farmerEarning };
 }
 
 module.exports = { fetchUnitPrice, calculatePrice, calculateFarmerPrice };

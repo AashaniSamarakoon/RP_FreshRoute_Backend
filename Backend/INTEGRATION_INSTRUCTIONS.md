@@ -102,10 +102,10 @@ Follow the testing steps in `PAYHERE_PAYMENT_INTEGRATION.md`
 ### Farmer App Status Updates
 After payment authorization, farmers can update the order lifecycle via three endpoints:
 
-* `GET /api/farmer/orders` — fetch orders assigned to the farmer (starts at `MATCHED` and includes all later states)
-* `PATCH /api/farmer/orders/:orderId/packing` — move `AUTHORIZED_PAYMENT` → `PACKING`
-* `PATCH /api/farmer/orders/:orderId/ready`  — move `PACKING` → `READY_FOR_PICKUP`
-
+* `GET /api/farmer/orders` — fetch orders assigned to the farmer (starts at `MATCHED` and includes all later states; each order now includes pricing breakdown and product images)
+* `GET /api/farmer/orders/:orderId` — fetch a single order's details by ID (farmer must be assigned to the order; includes pricing/images)
+* `PATCH /api/farmer/orders/:orderId/ready`  — move `AUTHORIZED_PAYMENT` → `READY_FOR_PICKUP` (formerly required PACKING; still accepted for older clients)
+* `PATCH /api/farmer/orders/:orderId/packing` — **deprecated alias** for the ready endpoint
 These endpoints require the caller to be the selected farmer.  Each call also
 sends a system notification to the buyer so they are informed of progress.
 7. **Transporter assigned** → Picks up goods

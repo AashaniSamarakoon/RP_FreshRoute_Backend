@@ -28,6 +28,7 @@ const {
   updateOrderStatusPacking,
   updateOrderStatusReady,
   getFarmerOrders,
+  getFarmerOrderById,
 } = require("../../controllers/farmer/farmerOrderController");
 const {
   getNotifications: getNotificationsNew,
@@ -76,9 +77,16 @@ router.get("/estimated-stocks", getEstimatedStocks);
 router.get("/blockchain/history/:stockId", getBatchHistory);
 router.get("/blockchain/verify/:stockId", getVerificationStatus);
 
-// Order lifecycle status updates (AUTHORIZED_PAYMENT → PACKING → READY_FOR_PICKUP)
-router.patch("/orders/:orderId/packing", updateOrderStatusPacking);
+// Order lifecycle status updates (farmer-side)
+// The `packing` step has been removed; the PATCH below now handles both
+// AUTHORIZED_PAYMENT (legacy) and PACKING statuses.
 router.patch("/orders/:orderId/ready",   updateOrderStatusReady);
+
+// kept for compatibility, forwards to ready
+router.patch("/orders/:orderId/packing", updateOrderStatusPacking);
+
+// GET single order by id (farmer must be assigned to it)
+router.get("/orders/:orderId", getFarmerOrderById);
 
 // GET orders assigned to this farmer (only after matching)
 router.get("/orders", getFarmerOrders);
