@@ -65,7 +65,7 @@ let currentHumidity = 65.0;
 
 // INTERVAL: 5 Minutes = 300000 ms
 // For testing, you might want 5000 (5 seconds)
-const SEND_INTERVAL = 300000;
+const SEND_INTERVAL = 20000;
 
 function simulateSensor() {
   // 1. Simulate Temp Fluctuation (Drift)

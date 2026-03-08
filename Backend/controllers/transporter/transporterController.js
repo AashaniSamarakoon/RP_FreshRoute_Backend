@@ -245,3 +245,112 @@ exports.updateJobAction = async (req, res) => {
     res.status(500).json({ message: "Server error processing action" });
   }
 };
+
+// POST /api/transporter/location
+exports.updateLocation = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { lat, lng } = req.body;
+
+    // Validate input
+    if (lat === undefined || lng === undefined) {
+      return res
+        .status(400)
+        .json({ message: "Latitude and longitude are required." });
+    }
+
+    // 1. Get the Vehicle ID assigned to this Transporter
+    const { data: transporterEntry, error: tError } = await supabase
+      .from("transporter")
+      .select("vehicle_id")
+      .eq("user_id", userId)
+      .single();
+
+    if (tError || !transporterEntry || !transporterEntry.vehicle_id) {
+      return res
+        .status(404)
+        .json({ message: "No vehicle assigned to this user." });
+    }
+
+    const vehicleId = transporterEntry.vehicle_id;
+
+    // 2. Update the vehicle's location and timestamp
+    const { error: updateError } = await supabase
+      .from("vehicles")
+      .update({
+        current_lat: parseFloat(lat),
+        current_lng: parseFloat(lng),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", vehicleId);
+
+    if (updateError) throw updateError;
+
+    res.json({
+      success: true,
+      message: "Location updated successfully",
+      data: { lat, lng },
+    });
+  } catch (err) {
+    console.error("Error updating vehicle location:", err);
+    res.status(500).json({ message: "Server error updating location" });
+  }
+};
+
+exports.getVehicleDetails = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log("Fetching vehicle details for transporter user ID:", userId);
+
+    // 1. Get the Vehicle ID assigned to this Transporter
+    const { data: transporterEntry, error: tError } = await supabase
+      .from("transporter")
+      .select("vehicle_id")
+      .eq("user_id", userId)
+      .single();
+
+    if (tError || !transporterEntry || !transporterEntry.vehicle_id) {
+      return res
+        .status(404)
+        .json({ message: "No vehicle assigned to this user." });
+    }
+
+    const vehicleId = transporterEntry.vehicle_id;
+
+    // 2. Fetch the vehicle details
+    const { data: vehicleDetails, error: vError } = await supabase
+      .from("vehicles")
+      .select("*")
+      .eq("id", vehicleId)
+      .single();
+
+    if (vError || !vehicleDetails) {
+      return res.status(404).json({ message: "Vehicle not found." });
+    }
+
+    res.json({
+      success: true,
+      data: vehicleDetails,
+    });
+  } catch (err) {
+    console.error("Error fetching vehicle details:", err);
+    res.status(500).json({ message: "Server error fetching vehicle details" });
+  }
+};
+
+exports.updateJobStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // "IN_TRANSIT" or "COMPLETED"
+
+    const { error } = await supabase
+      .from("transport_jobs")
+      .update({ status })
+      .eq("id", id);
+
+    if (error) throw error;
+    res.json({ success: true, message: "Job status updated" });
+  } catch (err) {
+    res.status(500).json({ message: "Server error updating status" });
+  }
+};
