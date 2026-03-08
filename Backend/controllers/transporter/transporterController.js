@@ -1,49 +1,5 @@
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 
-// GET /api/transporter/jobs
-// exports.getMyJobs = async (req, res) => {
-//   try {
-//     const userId = req.user.id; // From authMiddleware
-
-//     console.log("Fetching jobs for transporter user ID:", userId);
-
-//     const { data: vehicleData, error: vError } = await supabase
-//       .from("transporter")
-//       .select("vehicle_id")
-//       .eq("user_id", userId) // Assuming vehicle is linked to the user directly or via transporter table
-//       .single();
-
-//     console.log("Vehicle data fetched:", vehicleData);
-
-//     // NOTE: If your relation is User -> Transporter Table -> Vehicle, adjust accordingly:
-//     // const { data: transporter } = await supabase.from('transporter').select('id').eq('user_id', userId).single();
-//     // const { data: vehicleData } = await supabase.from('vehicles').select('*').eq('transporter_id', transporter.id).single();
-
-//     if (vError || !vehicleData) {
-//       return res
-//         .status(404)
-//         .json({ message: "No vehicle assigned to this user." });
-//     }
-
-//     // 2. Fetch Active Jobs for this vehicle
-//     const { data: jobs, error: jobError } = await supabase
-//       .from("transport_jobs")
-//       .select("*")
-//       .eq("vehicle_id", vehicleData.vehicle_id)
-//       .neq("status", "COMPLETED") // Hide completed history for now
-//       .order("job_date", { ascending: true });
-
-//     console.log("Jobs fetched for vehicle:", jobs);
-
-//     if (jobError) throw jobError;
-
-//     res.json({ vehicle: vehicleData, jobs });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Server error fetching jobs" });
-//   }
-// };
-
 exports.getMyJobs = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -142,10 +98,12 @@ exports.getJobDetails = async (req, res) => {
     if (orderError) throw orderError;
 
     // 3.5. Fetch Users for Farmers and Buyers
-    const userIds = [...new Set([
-      ...orders.map((o) => o.farmer_id).filter(Boolean),
-      ...orders.map((o) => o.buyer_id).filter(Boolean)
-    ])];
+    const userIds = [
+      ...new Set([
+        ...orders.map((o) => o.farmer_id).filter(Boolean),
+        ...orders.map((o) => o.buyer_id).filter(Boolean),
+      ]),
+    ];
 
     let usersMap = {};
     if (userIds.length > 0) {
@@ -156,23 +114,25 @@ exports.getJobDetails = async (req, res) => {
 
       if (usersError) throw usersError;
 
-      users.forEach(u => {
+      users.forEach((u) => {
         usersMap[u.id] = {
-          name: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
-          phone: u.phone
+          name: `${u.first_name || ""} ${u.last_name || ""}`.trim(),
+          phone: u.phone,
         };
       });
     }
 
     // 4. Fetch Fruit Specs (Based on variants found in orders)
-    const variants = [...new Set(orders.map((o) => o.fruit_variant).filter(Boolean))];
+    const variants = [
+      ...new Set(orders.map((o) => o.fruit_variant).filter(Boolean)),
+    ];
 
     let specs = [];
     if (variants.length > 0) {
       const { data: specsData, error: specError } = await supabase
         .from("fruit_specs")
         .select(
-          "variant_name, optimal_temp_c, max_safe_temp_c, force_refrigeration"
+          "variant_name, optimal_temp_c, max_safe_temp_c, force_refrigeration, handling_guidelines",
         )
         .in("variant_name", variants);
 
@@ -207,5 +167,190 @@ exports.getJobDetails = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error fetching job details" });
+  }
+};
+
+// POST /api/transporter/jobs/:id/action
+exports.updateJobAction = async (req, res) => {
+  try {
+    const { id: jobId } = req.params;
+    const { orderId, type } = req.body; // type should be 'PICKUP' or 'DROP'
+
+    // 1. Fetch current job
+    const { data: job, error: jobError } = await supabase
+      .from("transport_jobs")
+      .select("route_manifest, status")
+      .eq("id", jobId)
+      .single();
+
+    if (jobError || !job) {
+      return res.status(404).json({ message: "Job not found" });
+    }
+
+    let manifest = job.route_manifest || [];
+    let itemUpdated = false;
+
+    // 2. Update the specific manifest item
+    manifest = manifest.map((item) => {
+      if (item.order_id === orderId && item.type === type) {
+        itemUpdated = true;
+        return {
+          ...item,
+          is_completed: true,
+          completed_at: new Date().toISOString(),
+        };
+      }
+      return item;
+    });
+
+    if (!itemUpdated) {
+      return res
+        .status(400)
+        .json({ message: "Matching manifest item not found." });
+    }
+
+    // 3. Check if the entire job is finished
+    const allCompleted = manifest.every((item) => item.is_completed === true);
+    const newJobStatus = allCompleted ? "COMPLETED" : job.status;
+
+    // 4. Save the updated manifest back to transport_jobs
+    const { error: updateJobError } = await supabase
+      .from("transport_jobs")
+      .update({
+        route_manifest: manifest,
+        status: newJobStatus,
+      })
+      .eq("id", jobId);
+
+    if (updateJobError) throw updateJobError;
+
+    // 5. If it's a DROP action, mark the actual Order as completed
+    if (type === "DROP") {
+      const { error: orderError } = await supabase
+        .from("orders")
+        .update({ status: "completed" })
+        .eq("id", orderId);
+
+      if (orderError) throw orderError;
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully confirmed ${type}`,
+      manifest,
+      jobStatus: newJobStatus,
+    });
+  } catch (err) {
+    console.error("Error updating job action:", err);
+    res.status(500).json({ message: "Server error processing action" });
+  }
+};
+
+// POST /api/transporter/location
+exports.updateLocation = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { lat, lng } = req.body;
+
+    // Validate input
+    if (lat === undefined || lng === undefined) {
+      return res
+        .status(400)
+        .json({ message: "Latitude and longitude are required." });
+    }
+
+    // 1. Get the Vehicle ID assigned to this Transporter
+    const { data: transporterEntry, error: tError } = await supabase
+      .from("transporter")
+      .select("vehicle_id")
+      .eq("user_id", userId)
+      .single();
+
+    if (tError || !transporterEntry || !transporterEntry.vehicle_id) {
+      return res
+        .status(404)
+        .json({ message: "No vehicle assigned to this user." });
+    }
+
+    const vehicleId = transporterEntry.vehicle_id;
+
+    // 2. Update the vehicle's location and timestamp
+    const { error: updateError } = await supabase
+      .from("vehicles")
+      .update({
+        current_lat: parseFloat(lat),
+        current_lng: parseFloat(lng),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", vehicleId);
+
+    if (updateError) throw updateError;
+
+    res.json({
+      success: true,
+      message: "Location updated successfully",
+      data: { lat, lng },
+    });
+  } catch (err) {
+    console.error("Error updating vehicle location:", err);
+    res.status(500).json({ message: "Server error updating location" });
+  }
+};
+
+exports.getVehicleDetails = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log("Fetching vehicle details for transporter user ID:", userId);
+
+    // 1. Get the Vehicle ID assigned to this Transporter
+    const { data: transporterEntry, error: tError } = await supabase
+      .from("transporter")
+      .select("vehicle_id")
+      .eq("user_id", userId)
+      .single();
+
+    if (tError || !transporterEntry || !transporterEntry.vehicle_id) {
+      return res
+        .status(404)
+        .json({ message: "No vehicle assigned to this user." });
+    }
+
+    const vehicleId = transporterEntry.vehicle_id;
+
+    // 2. Fetch the vehicle details
+    const { data: vehicleDetails, error: vError } = await supabase
+      .from("vehicles")
+      .select("*")
+      .eq("id", vehicleId)
+      .single();
+
+    if (vError || !vehicleDetails) {
+      return res.status(404).json({ message: "Vehicle not found." });
+    }
+
+    res.json({
+      success: true,
+      data: vehicleDetails,
+    });
+  } catch (err) {
+    console.error("Error fetching vehicle details:", err);
+    res.status(500).json({ message: "Server error fetching vehicle details" });
+  }
+};
+
+exports.updateJobStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // "IN_TRANSIT" or "COMPLETED"
+
+    const { error } = await supabase
+      .from("transport_jobs")
+      .update({ status })
+      .eq("id", id);
+
+    if (error) throw error;
+    res.json({ success: true, message: "Job status updated" });
+  } catch (err) {
+    res.status(500).json({ message: "Server error updating status" });
   }
 };

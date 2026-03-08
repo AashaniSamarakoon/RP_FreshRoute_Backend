@@ -1,169 +1,4 @@
-// // controllers/batchController.js
-// const { supabase } = require("../../utils/supabaseClient");
-// const { optimizeManifest } = require("../../utils/routeOptimizer");
-
-// exports.runDailyBatch = async (req, res) => {
-//   // 1. INPUT: Date to plan for
-//   const { targetDate } = req.body; // e.g., "2025-01-20"
-//   const logs = [];
-//   const print = (m) => {
-//     console.log(m);
-//     logs.push(m);
-//   };
-
-//   print(`=== 🗓️ RUNNING BATCH FOR: ${targetDate} ===`);
-
-//   try {
-//     // --- A. GET PENDING ORDERS ---
-//     const { data: orders } = await supabase
-//       .from("orders")
-//       .select("*")
-//       .eq("status", "pending")
-//       .eq("pickup_date", targetDate);
-
-//     if (!orders || orders.length === 0)
-//       return res.json({ message: "No orders found." });
-//     print(`[DATA] Found ${orders.length} pending orders.`);
-
-//     // --- B. GET AVAILABLE VEHICLES (Not busy on targetDate) ---
-//     // Get IDs of vehicles already booked for this date
-//     const { data: busyJobs } = await supabase
-//       .from("transport_jobs")
-//       .select("vehicle_id")
-//       .eq("job_date", targetDate);
-
-//     const busyIds = busyJobs.map((j) => j.vehicle_id);
-
-//     // Fetch vehicles including their coordinates
-//     let vehicleQuery = supabase
-//       .from("vehicles")
-//       .select("*") // Ensure this selects current_lat, current_lng
-//       .eq("status", "AVAILABLE");
-
-//     if (busyIds.length > 0)
-//       vehicleQuery = vehicleQuery.not("id", "in", `(${busyIds.join(",")})`);
-
-//     let { data: fleet } = await vehicleQuery;
-//     print(`[FLEET] ${fleet.length} vehicles available for today.`);
-
-//     // --- C. GROUP ORDERS (By Variant/Requirement) ---
-//     // For simplicity: Group by 'fruit_variant'
-//     let groups = {};
-//     orders.forEach((o) => {
-//       const key = o.fruit_variant; // e.g., 'MANGO_TJC'
-//       if (!groups[key])
-//         groups[key] = { items: [], totalWeight: 0, requiredType: "UNCOVERED" };
-
-//       groups[key].items.push(o);
-//       groups[key].totalWeight += o.quantity;
-
-//       // Simple Logic: If TJC, force Refrigerated
-//       if (key === "MANGO_TJC") groups[key].requiredType = "REFRIGERATED";
-//       else groups[key].requiredType = "COVERED"; // Default for others
-//     });
-
-//     // --- D. ASSIGNMENT LOOP (Bin Packing) ---
-//     const createdJobs = [];
-
-//     for (const [variant, group] of Object.entries(groups)) {
-//       print(
-//         `[PLANNING] Group ${variant}: ${group.totalWeight}kg. Need: ${group.requiredType}`
-//       );
-
-//       let remainingOrders = [...group.items];
-
-//       // Loop until all orders in this group are assigned or we run out of trucks
-//       while (remainingOrders.length > 0) {
-//         // 1. Find Best Truck
-//         // Filter by Type
-//         let candidates = fleet.filter((v) => {
-//           if (group.requiredType === "REFRIGERATED")
-//             return v.vehicle_type === "REFRIGERATED";
-//           return true; // Simple fallback
-//         });
-
-//         // Sort by Capacity (Largest first to fit more)
-//         candidates.sort((a, b) => b.capacity_kg - a.capacity_kg);
-//         const vehicle = candidates[0];
-
-//         if (!vehicle) {
-//           print(`[ALERT] No suitable vehicle for remainder of ${variant}`);
-//           break;
-//         }
-
-//         // 2. Fill Truck
-//         let currentLoad = 0;
-//         let assignedIds = [];
-//         let jobOrders = [];
-//         let nextRoundOrders = [];
-
-//         remainingOrders.forEach((o) => {
-//           if (currentLoad + o.quantity <= vehicle.capacity_kg) {
-//             currentLoad += o.quantity;
-//             assignedIds.push(o.id);
-//             jobOrders.push(o);
-//           } else {
-//             nextRoundOrders.push(o);
-//           }
-//         });
-
-//         if (assignedIds.length === 0) {
-//           // Current smallest order is bigger than truck? Skip.
-//           print(`[ERROR] Order too big for available truck.`);
-//           break;
-//         }
-
-//         // 3. Optimize Route (UPDATED)
-//         print(
-//           `   -> Assigning ${vehicle.vehicle_license_plate} (${currentLoad}/${vehicle.capacity_kg}kg)`
-//         );
-
-//         // *** HERE IS THE UPDATE: Pass vehicle start location ***
-//         const optimizedRoute = optimizeManifest(
-//           jobOrders,
-//           vehicle.current_lat,
-//           vehicle.current_lng
-//         );
-
-//         // 4. Save Job
-//         const { data: jobData, error: jobErr } = await supabase
-//           .from("transport_jobs")
-//           .insert({
-//             job_date: targetDate,
-//             vehicle_id: vehicle.id,
-//             vehicle_type_assigned: vehicle.vehicle_type,
-//             route_name: `${variant} Collection`,
-//             total_weight_kg: currentLoad,
-//             route_manifest: optimizedRoute,
-//             status: "SCHEDULED",
-//           })
-//           .select()
-//           .single();
-
-//         if (!jobErr) {
-//           // Update Orders
-//           await supabase
-//             .from("orders")
-//             .update({ status: "assigned", assigned_job_id: jobData.id })
-//             .in("id", assignedIds);
-
-//           createdJobs.push(jobData);
-
-//           // Remove vehicle from fleet so it's not used again this loop
-//           fleet = fleet.filter((v) => v.id !== vehicle.id);
-//         }
-
-//         remainingOrders = nextRoundOrders;
-//       }
-//     }
-
-//     res.json({ success: true, jobs: createdJobs, logs });
-//   } catch (e) {
-//     console.error(e);
-//     res.status(500).json({ error: e.message });
-//   }
-// };
-
+// Replace the path with wherever your supabase client is stored
 const { supabase } = require("../../utils/supabaseClient");
 const { optimizeManifest } = require("../../utils/routeOptimizer");
 const {
@@ -180,119 +15,31 @@ exports.runDailyBatch = async (req, res) => {
     logs.push(m);
   };
 
-  print(`Running Batch for: ${targetDate}`);
+  print(`[BATCH START] Running Assignment Engine for: ${targetDate}`);
 
   try {
-    // 1. Fetch Pending Orders
+    // 1. DATA INGESTION
     const { data: orders } = await supabase
       .from("orders")
       .select("*")
       .eq("status", "pending")
       .eq("pickup_date", targetDate);
-
     if (!orders?.length) return res.json({ message: "No pending orders." });
 
-    // 2. Fetch Fruit Specs
     const variants = [...new Set(orders.map((o) => o.fruit_variant))];
     const { data: allSpecs } = await supabase
       .from("fruit_specs")
       .select("*")
       .in("variant_name", variants);
-
     const specsMap = allSpecs.reduce(
       (acc, s) => ({ ...acc, [s.variant_name]: s }),
-      {}
+      {},
     );
 
-    // 3. Enrich Orders with Real-Time Constraints
-    const enrichedOrders = await Promise.all(
-      orders.map(async (order) => {
-        const specs = specsMap[order.fruit_variant];
-        if (!specs) throw new Error(`Missing specs for ${order.fruit_variant}`);
-
-        // Resolve Coordinates
-        let pLat = order.pickup_lat,
-          pLng = order.pickup_lng;
-        let dLat = order.drop_lat,
-          dLng = order.drop_lng;
-
-        if (!pLat) {
-          const city =
-            SRI_LANKA_CITIES[(order.pickup_location || "").toLowerCase()];
-          if (city) {
-            pLat = city.lat;
-            pLng = city.lng;
-          }
-        }
-        if (!dLat) {
-          const city =
-            SRI_LANKA_CITIES[(order.drop_location || "").toLowerCase()];
-          if (city) {
-            dLat = city.lat;
-            dLng = city.lng;
-          }
-        }
-
-        // Calculate Real Distance & Weather (Using OSRM now)
-        const routingData = await getDrivingDistanceKm(pLat, pLng, dLat, dLng);
-        const distance = routingData.distanceKm;
-
-        // Use Pickup location for weather checks
-        const weather = await getRealWeather(pLat, pLng);
-
-        // Determine Vehicle Requirement
-        let reqType = "UNCOVERED";
-        let reason = "Optimal";
-
-        if (specs.force_refrigeration) {
-          reqType = "REFRIGERATED";
-          reason = "Product Requirement";
-        } else if (weather.temp_c > specs.max_safe_temp_c) {
-          reqType = "REFRIGERATED";
-          reason = `Heat (${weather.temp_c}°C)`;
-        } else if (distance > specs.max_dist_uncooled_km) {
-          reqType = "REFRIGERATED";
-          reason = `Distance (${distance}km)`;
-        } else if (weather.raining) {
-          reqType = "COVERED";
-          reason = "Rain";
-        }
-
-        return {
-          ...order,
-          _algo: { distance, weather, reqType, reason, pLat, pLng, dLat, dLng },
-        };
-      })
-    );
-
-    // 4. Group Orders by Variant & Strictness
-    let groups = {};
-
-    enrichedOrders.forEach((o) => {
-      const key = o.fruit_variant;
-      if (!groups[key])
-        groups[key] = { items: [], totalWeight: 0, strictType: "UNCOVERED" };
-
-      groups[key].items.push(o);
-      groups[key].totalWeight += o.quantity;
-
-      // Escalate group requirement if any single order needs it
-      const currentReq = groups[key].strictType;
-      const newReq = o._algo.reqType;
-
-      if (newReq === "REFRIGERATED") {
-        groups[key].strictType = "REFRIGERATED";
-      } else if (newReq === "COVERED" && currentReq !== "REFRIGERATED") {
-        groups[key].strictType = "COVERED";
-      }
-    });
-
-    // 5. Get Available Fleet
     const { data: busyJobs } = await supabase
       .from("transport_jobs")
       .select("vehicle_id")
       .eq("job_date", targetDate);
-
     const busyIds = busyJobs.map((j) => j.vehicle_id);
 
     let vehicleQuery = supabase
@@ -301,123 +48,199 @@ exports.runDailyBatch = async (req, res) => {
       .eq("status", "AVAILABLE");
     if (busyIds.length > 0)
       vehicleQuery = vehicleQuery.not("id", "in", `(${busyIds.join(",")})`);
+    let { data: availableFleet } = await vehicleQuery;
 
-    let { data: fleet } = await vehicleQuery;
-    print(`Fleet available: ${fleet.length}`);
+    let fleetStatus = availableFleet.map((v) => ({
+      ...v,
+      remaining_capacity: v.capacity_kg,
+      assigned_orders: [],
+      has_ethylene_producer: false,
+      has_ethylene_sensitive: false,
+      is_reefer_on: false,
+    }));
 
-    // 6. Assign Vehicles (Bin Packing)
+    // 2. ORDER PRE-PROCESSING & ENVIRONMENTAL ENRICHMENT
+    print(`[PHASE 2] Enriching ${orders.length} orders with constraints...`);
+    const enrichedOrders = [];
+
+    for (const order of orders) {
+      const specs = specsMap[order.fruit_variant];
+      if (!specs) throw new Error(`Missing specs for ${order.fruit_variant}`);
+
+      let pLat =
+        order.pickup_lat ||
+        SRI_LANKA_CITIES[(order.pickup_location || "").toLowerCase()]?.lat;
+      let pLng =
+        order.pickup_lng ||
+        SRI_LANKA_CITIES[(order.pickup_location || "").toLowerCase()]?.lng;
+      let dLat =
+        order.drop_lat ||
+        SRI_LANKA_CITIES[(order.drop_location || "").toLowerCase()]?.lat;
+      let dLng =
+        order.drop_lng ||
+        SRI_LANKA_CITIES[(order.drop_location || "").toLowerCase()]?.lng;
+
+      const routingData = await getDrivingDistanceKm(pLat, pLng, dLat, dLng);
+      const distance = routingData.distanceKm;
+      const weather = await getRealWeather(pLat, pLng);
+
+      let reqType = "UNCOVERED";
+      let requiresCooling = false;
+      let reason = "Optimal conditions met";
+      let strictnessScore = 1;
+
+      if (
+        specs.force_refrigeration ||
+        weather.temp_c > specs.max_safe_temp_c ||
+        distance > specs.max_dist_uncooled_km
+      ) {
+        reqType = "REFRIGERATED";
+        requiresCooling = true;
+        reason = `Heat/Distance Limit`;
+        strictnessScore = 3;
+      } else if (weather.raining) {
+        reqType = "COVERED";
+        requiresCooling = false;
+        reason = "Rain Forecasted";
+        strictnessScore = 2;
+      }
+
+      enrichedOrders.push({
+        ...order,
+        _algo: {
+          pLat,
+          pLng,
+          dLat,
+          dLng,
+          reqType,
+          requiresCooling,
+          reason,
+          strictnessScore,
+          specs,
+        },
+      });
+    }
+
+    // 3. FIRST-FIT DECREASING (FFD) SORTING
+    enrichedOrders.sort((a, b) => {
+      if (a._algo.strictnessScore !== b._algo.strictnessScore) {
+        return b._algo.strictnessScore - a._algo.strictnessScore;
+      }
+      return b.quantity - a.quantity;
+    });
+
+    // 4. MULTI-CONSTRAINT BIN PACKING & SPLITTING
+    print(`[PHASE 4] Initiating Allocation Engine...`);
     const createdJobs = [];
 
-    for (const [variant, group] of Object.entries(groups)) {
-      let remainingOrders = [...group.items];
+    for (const order of enrichedOrders) {
+      let remainingQty = order.quantity;
+      const { reqType, requiresCooling, specs } = order._algo;
 
-      while (remainingOrders.length > 0) {
-        // Determine acceptable vehicle types based on strictness
-        let acceptableTypes = [];
-        if (group.strictType === "REFRIGERATED")
-          acceptableTypes = ["REFRIGERATED"];
-        else if (group.strictType === "COVERED")
-          acceptableTypes = ["COVERED", "REFRIGERATED"];
-        else acceptableTypes = ["UNCOVERED", "COVERED", "REFRIGERATED"];
+      while (remainingQty > 0) {
+        let bestVehicle = null;
+        let bestScore = -Infinity;
 
-        // Filter and Sort Fleet
-        let candidates = fleet.filter((v) =>
-          acceptableTypes.includes(v.vehicle_type)
-        );
+        for (let v of fleetStatus) {
+          if (v.remaining_capacity <= 0) continue;
 
-        candidates.sort((a, b) => {
-          // Prioritize exact type match to save cost, then capacity
-          const typeScore = (t) =>
-            t === "REFRIGERATED" ? 2 : t === "COVERED" ? 1 : 0;
-          const reqScore =
-            group.strictType === "REFRIGERATED"
-              ? 2
-              : group.strictType === "COVERED"
-              ? 1
-              : 0;
+          let typeMatchScore = 0;
+          if (reqType === "REFRIGERATED" && v.vehicle_type !== "REFRIGERATED")
+            continue;
+          if (reqType === "COVERED" && v.vehicle_type === "UNCOVERED") continue;
 
-          const diffA = Math.abs(typeScore(a.vehicle_type) - reqScore);
-          const diffB = Math.abs(typeScore(b.vehicle_type) - reqScore);
+          if (reqType === v.vehicle_type) typeMatchScore = 100;
+          else if (v.vehicle_type === "REFRIGERATED" && reqType === "COVERED")
+            typeMatchScore = 50;
+          else if (v.vehicle_type === "COVERED" && reqType === "UNCOVERED")
+            typeMatchScore = 50;
+          else if (v.vehicle_type === "REFRIGERATED" && reqType === "UNCOVERED")
+            typeMatchScore = 10;
 
-          if (diffA !== diffB) return diffA - diffB;
-          return b.capacity_kg - a.capacity_kg;
-        });
+          // Ethylene Constraint Check
+          if (
+            v.vehicle_type === "COVERED" ||
+            v.vehicle_type === "REFRIGERATED"
+          ) {
+            if (specs.ethylene_producer && v.has_ethylene_sensitive) continue;
+            if (specs.ethylene_sensitive && v.has_ethylene_producer) continue;
+          }
 
-        const vehicle = candidates[0];
+          const loadAmount = Math.min(remainingQty, v.remaining_capacity);
+          const utilizationScore = (loadAmount / v.remaining_capacity) * 50;
+          const currentScore = typeMatchScore + utilizationScore;
 
-        if (!vehicle) {
+          if (currentScore > bestScore) {
+            bestScore = currentScore;
+            bestVehicle = v;
+          }
+        }
+
+        if (!bestVehicle) {
           print(
-            `Alert: No suitable vehicle for ${variant} (Req: ${group.strictType})`
+            `[ALERT] No suitable vehicles left to fulfill remaining ${remainingQty}kg of Order ${order.id}`,
           );
           break;
         }
 
-        // Fill Vehicle
-        let currentLoad = 0;
-        let assignedIds = [];
-        let jobOrders = [];
-        let nextRoundOrders = [];
+        const loadAmount = Math.min(
+          remainingQty,
+          bestVehicle.remaining_capacity,
+        );
+        remainingQty -= loadAmount;
+        bestVehicle.remaining_capacity -= loadAmount;
 
-        remainingOrders.forEach((o) => {
-          if (currentLoad + o.quantity <= vehicle.capacity_kg) {
-            currentLoad += o.quantity;
-            assignedIds.push(o.id);
-            jobOrders.push(o);
-          } else {
-            nextRoundOrders.push(o);
-          }
+        if (specs.ethylene_producer) bestVehicle.has_ethylene_producer = true;
+        if (specs.ethylene_sensitive) bestVehicle.has_ethylene_sensitive = true;
+        if (requiresCooling) bestVehicle.is_reefer_on = true;
+
+        bestVehicle.assigned_orders.push({
+          ...order,
+          allocated_quantity: loadAmount,
         });
-
-        if (assignedIds.length === 0) {
-          print(`Error: Order exceeds max fleet capacity.`);
-          break;
-        }
-
-        // Generate Optimized Route
-        const optimizerInput = jobOrders.map((o) => ({
-          ...o,
-          pickup_lat: o._algo.pLat,
-          pickup_lng: o._algo.pLng,
-          drop_lat: o._algo.dLat,
-          drop_lng: o._algo.dLng,
-        }));
-
-        const optimizedRoute = await optimizeManifest(
-          optimizerInput,
-          vehicle.current_lat,
-          vehicle.current_lng
-        );
-
-        // Commit Job
-        const { data: jobData } = await supabase
-          .from("transport_jobs")
-          .insert({
-            job_date: targetDate,
-            vehicle_id: vehicle.id,
-            vehicle_type_assigned: vehicle.vehicle_type,
-            route_name: `${variant} - ${group.strictType} Run`,
-            total_weight_kg: currentLoad,
-            route_manifest: optimizedRoute,
-            status: "SCHEDULED",
-          })
-          .select()
-          .single();
-
-        await supabase
-          .from("orders")
-          .update({ status: "assigned", assigned_job_id: jobData.id })
-          .in("id", assignedIds);
-
-        print(
-          `-> Assigned ${vehicle.vehicle_license_plate} (${currentLoad}kg)`
-        );
-
-        createdJobs.push(jobData);
-        fleet = fleet.filter((v) => v.id !== vehicle.id);
-        remainingOrders = nextRoundOrders;
       }
     }
 
+    // 5. JOB MANIFEST GENERATION & DB COMMIT
+    for (let v of fleetStatus) {
+      if (v.assigned_orders.length === 0) continue;
+
+      const totalLoad = v.capacity_kg - v.remaining_capacity;
+      const startLat = v.current_lat || SRI_LANKA_CITIES.colombo.lat;
+      const startLng = v.current_lng || SRI_LANKA_CITIES.colombo.lng;
+
+      print(`[OPTIMIZER] Generating route for ${v.vehicle_license_plate}...`);
+      const optimizedManifest = await optimizeManifest(
+        v.assigned_orders,
+        startLat,
+        startLng,
+      );
+
+      const { data: jobData, error: jobError } = await supabase
+        .from("transport_jobs")
+        .insert({
+          job_date: targetDate,
+          vehicle_id: v.id,
+          vehicle_type_assigned: v.vehicle_type,
+          cooling_unit_on: v.is_reefer_on,
+          total_weight_kg: totalLoad,
+          route_manifest: optimizedManifest,
+          status: "SCHEDULED",
+        })
+        .select()
+        .single();
+
+      if (jobError) throw jobError;
+      createdJobs.push(jobData);
+
+      const orderIds = [...new Set(v.assigned_orders.map((o) => o.id))];
+      await supabase
+        .from("orders")
+        .update({ status: "assigned", assigned_job_id: jobData.id })
+        .in("id", orderIds);
+    }
+
+    print(`[BATCH COMPLETE] Created ${createdJobs.length} jobs successfully.`);
     res.json({ success: true, jobs: createdJobs, logs });
   } catch (e) {
     console.error(e);

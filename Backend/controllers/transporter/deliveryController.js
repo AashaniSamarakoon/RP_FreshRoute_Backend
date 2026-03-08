@@ -63,7 +63,55 @@ const confirmDelivery = async (req, res) => {
       .eq("id", orderId);
 
     if (updateError) {
-      throw new Error("Failed to update order: " + updateError.message);
+      throw new Error("Failed to update placed_orders: " + updateError.message);
+    }
+
+    // Sync status with core orders table
+    const { data: mainOrder, error: mainOrderError } = await supabase
+       .from("orders")
+       .update({
+           status: "delivered", // lowercase per general convention in orders table
+           updated_at: new Date().toISOString()
+       })
+       .eq("placed_order_id", orderId)
+       .select("assigned_job_id")
+       .single();
+
+    if (!mainOrderError && mainOrder && mainOrder.assigned_job_id) {
+       // Update Route Manifest to mark this drop as completed
+       const { data: jobData } = await supabase
+          .from("transport_jobs")
+          .select("route_manifest")
+          .eq("id", mainOrder.assigned_job_id)
+          .single();
+          
+       if (jobData && jobData.route_manifest) {
+          const updatedManifest = jobData.route_manifest.map(stop => {
+             if (stop.order_id === mainOrder.id && stop.type === 'DROP') {
+                return { ...stop, completed: true, completed_at: new Date().toISOString() };
+             }
+             return stop;
+          });
+          
+          await supabase
+             .from("transport_jobs")
+             .update({ route_manifest: updatedManifest })
+             .eq("id", mainOrder.assigned_job_id);
+       }
+
+       // Check if all orders on this job are delivered to close the job
+       const { data: jobOrders } = await supabase
+          .from("orders")
+          .select("status")
+          .eq("assigned_job_id", mainOrder.assigned_job_id);
+       
+       const allDelivered = jobOrders?.every(o => o.status === 'delivered');
+       if (allDelivered) {
+          await supabase
+             .from("transport_jobs")
+             .update({ status: "COMPLETED", completed_at: new Date().toISOString() })
+             .eq("id", mainOrder.assigned_job_id);
+       }
     }
 
     return res.status(200).json({
@@ -251,12 +299,45 @@ const confirmQualityAndPickup = async (req, res) => {
       })
       .eq("id", orderId);
 
-    // Generate QR / public verify URL (triggered at quality-confirmed pickup)
-    if (order.harvest_id) {
-      await supabase.from("placed_orders").update({
-        public_verify_url: `https://app.freshroute.lk/verify/${order.harvest_id}`,
-        qr_generated_at:   new Date().toISOString(),
-      }).eq("id", orderId);
+    // Sync status with core orders table
+    const { data: mainOrder, error: mainOrderErr } = await supabase
+       .from("orders")
+       .update({
+           status: "in_transit",
+           updated_at: new Date().toISOString()
+       })
+       .eq("placed_order_id", orderId)
+       .select("assigned_job_id")
+       .single();
+
+    if (!mainOrderErr && mainOrder && mainOrder.assigned_job_id) {
+        // Mark job as in progress if this is the first pickup
+        await supabase
+           .from("transport_jobs")
+           .update({ status: "IN_PROGRESS" })
+           .eq("id", mainOrder.assigned_job_id)
+           .eq("status", "SCHEDULED"); // Only update if it's currently scheduled
+           
+        // Update Route Manifest to mark this pickup as completed
+        const { data: jobData } = await supabase
+           .from("transport_jobs")
+           .select("route_manifest")
+           .eq("id", mainOrder.assigned_job_id)
+           .single();
+           
+        if (jobData && jobData.route_manifest) {
+           const updatedManifest = jobData.route_manifest.map(stop => {
+              if (stop.order_id === mainOrder.id && stop.type === 'PICKUP') {
+                 return { ...stop, completed: true, completed_at: new Date().toISOString() };
+              }
+              return stop;
+           });
+           
+           await supabase
+              .from("transport_jobs")
+              .update({ route_manifest: updatedManifest })
+              .eq("id", mainOrder.assigned_job_id);
+        }
     }
 
     // Record blockchain confirmation of payment release
