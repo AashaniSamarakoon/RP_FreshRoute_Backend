@@ -3,8 +3,9 @@ const logger = require("../../utils/logger");
 
 /**
  * GET /api/buyer/gradings/:orderId
- * Get all grading images, predictions, accuracy, and sequence for a specific order
- * Only accessible by the buyer who owns the order
+ * orderId = placed_order_id (received from frontend).
+ * Resolve via orders table: find row where placed_order_id = orderId, get that row's id, then get gradings by that order id.
+ * Returns grading images, predictions, accuracy, sequence. Only accessible by the buyer who owns the order.
  */
 const getGradingsByOrder = async (req, res) => {
   try {
@@ -57,26 +58,51 @@ const getGradingsByOrder = async (req, res) => {
       });
     }
 
-    // 2. Verify the order belongs to this buyer
-    const { data: order, error: orderError } = await supabase
+    // 2. Verify the order belongs to this buyer (orderId = placed_order_id)
+    const { data: placedOrder, error: placedOrderError } = await supabase
       .from("placed_orders")
       .select("id, buyer_id")
       .eq("id", orderId)
       .eq("buyer_id", buyerData.id)
       .single();
 
-    // if (orderError || !order) {
-    //   return res.status(404).json({
-    //     success: false,
-    //     message: "Order not found or access denied",
-    //   });
-    // }
+    if (placedOrderError || !placedOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found or access denied",
+      });
+    }
 
-    // 3. Get all gradings for this order
+    // 3. Find orders table row where placed_order_id = received orderId, get that row's id
+    const { data: ordersRows, error: ordersError } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("placed_order_id", orderId);
+
+    if (ordersError) {
+      console.error("Error fetching orders by placed_order_id:", ordersError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to resolve order: " + ordersError.message,
+      });
+    }
+
+    // Use transport order id(s) to get gradings; gradings.order_id is the orders.id
+    const gradingOrderIds = (ordersRows || []).map((o) => o.id);
+    if (gradingOrderIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No gradings found for this order",
+        order_id: orderId,
+        gradings: [],
+      });
+    }
+
+    // 4. Get all gradings for this order (by transport order id)
     const { data: gradings, error: gradingsError } = await supabase
       .from("gradings")
       .select("grading_id, job_id, order_id, created_at")
-      .eq("order_id", orderId)
+      .in("order_id", gradingOrderIds)
       .order("created_at", { ascending: false });
 
     if (gradingsError) {
@@ -96,7 +122,7 @@ const getGradingsByOrder = async (req, res) => {
       });
     }
 
-    // 4. Get all grading images for all gradings
+    // 5. Get all grading images for all gradings
     const gradingIds = gradings.map((g) => g.grading_id);
 
     const { data: gradingImages, error: imagesError } = await supabase
@@ -114,7 +140,7 @@ const getGradingsByOrder = async (req, res) => {
       });
     }
 
-    // 5. Group images by grading_id
+    // 6. Group images by grading_id
     const gradingsWithImages = gradings.map((grading) => {
       const images = (gradingImages || []).filter(
         (img) => img.grading_id === grading.grading_id

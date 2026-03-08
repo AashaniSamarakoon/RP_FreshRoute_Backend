@@ -59,6 +59,10 @@ const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
 const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
 const paymentRoutes = require("./routes/buyer/paymentRoutes");
+const complaintRoutes = require("./routes/buyer/complaintRoutes");
+const adminComplaintRoutes = require("./routes/admin/complaintRoutes");
+const adminGradingRoutes = require("./routes/admin/gradingRoutes");
+const adminTempsRoutes = require("./routes/admin/tempsRoutes");
 const payhereRoutes = require("./routes/payhereRoutes");
 const { runDailyAutoCharge } = require("./Services/payhereChargeService");
 const deliveryRoutes = require("./routes/transporter/deliveryRoutes");
@@ -153,11 +157,11 @@ app.use(
 // Farmer proposals (view/accept/reject buyer requests)
 app.use("/api/farmer/proposals", farmerProposalRoutes);
 
-// Buyer place order
+// Buyer place order (admin can also access e.g. order details)
 app.use(
   "/api/buyer/place-order",
   authMiddleware,
-  requireRole("buyer"),
+  requireRole("buyer", "admin"),
   orderRoutes,
 );
 
@@ -203,6 +207,16 @@ app.use("/api/alerts", alertRoutes);
 
 // Payment status and release routes
 app.use("/api/buyer/payment", paymentRoutes);
+
+// Buyer complaints (create, list by user, get by id, add comment)
+app.use("/api/buyer/complaints", complaintRoutes);
+
+// Admin complaints (list all or by user_id, get comments, get by id, update/add admin comment)
+app.use("/api/admin/complaints", adminComplaintRoutes);
+// Admin gradings (all gradings + by orderId, verify grading; same as buyer re-verification)
+app.use("/api/admin/gradings", adminGradingRoutes);
+// Admin temps (get temp alerts by placed_order_id via orders table)
+app.use("/api/admin/temps", adminTempsRoutes);
 
 // PayHere IPN notification endpoint (no auth — called by PayHere server)
 app.use("/api/payhere", payhereRoutes);

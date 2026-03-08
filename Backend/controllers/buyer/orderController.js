@@ -285,29 +285,33 @@ const getMyOrders = async (req, res) => {
 const getOrderDetails = async (req, res) => {
   try {
     const userId = req.user?.id;
+    const role = (req.user?.role || "").toLowerCase();
+    const isAdmin = role === "admin";
     const { orderId } = req.params;
 
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
-    // Get buyer ID
-    const { data: buyerData, error: buyerError } = await supabase
-      .from("buyers")
-      .select("user_id")
-      .eq("user_id", userId)
-      .single();
+    let buyerId = null;
+    if (!isAdmin) {
+      const { data: buyerData, error: buyerError } = await supabase
+        .from("buyers")
+        .select("user_id")
+        .eq("user_id", userId)
+        .single();
 
-    if (buyerError || !buyerData) {
-      return res.status(404).json({ message: "Buyer profile not found" });
+      if (buyerError || !buyerData) {
+        return res.status(404).json({ message: "Buyer profile not found" });
+      }
+      buyerId = buyerData.user_id;
     }
-    const buyerId = buyerData.user_id;
 
-    // Get order
-    const { data: orderData, error: orderError } = await supabase
+    // Get order (admin can view any order; buyer only their own)
+    let query = supabase
       .from("placed_orders")
       .select("*")
-      .eq("id", orderId)
-      .eq("buyer_id", buyerId)
-      .single();
+      .eq("id", orderId);
+    if (!isAdmin) query = query.eq("buyer_id", buyerId);
+    const { data: orderData, error: orderError } = await query.single();
 
     if (orderError || !orderData) {
       return res.status(404).json({ message: "Order not found" });

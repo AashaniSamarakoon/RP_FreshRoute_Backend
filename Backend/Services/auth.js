@@ -21,12 +21,21 @@ async function authMiddleware(req, res, next) {
   if (error || !data?.user) {
     return res.status(401).json({ message: "Invalid or expired token" });
   }
-  // user_metadata and email etc are available
   const u = data.user;
+  let role = (u.user_metadata?.role || "").toLowerCase();
+  // If role not in token metadata (e.g. admin set only in users table), fetch from public.users
+  if (!role) {
+    const { data: userRow } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", u.id)
+      .single();
+    if (userRow?.role) role = String(userRow.role).toLowerCase();
+  }
   req.user = {
     id: u.id,
     email: u.email,
-    role: (u.user_metadata?.role || "").toLowerCase(),
+    role,
     first_name: u.user_metadata?.first_name,
     last_name: u.user_metadata?.last_name,
     phone: u.phone,
