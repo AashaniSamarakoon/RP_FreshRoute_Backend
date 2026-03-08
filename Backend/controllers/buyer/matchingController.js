@@ -1,5 +1,6 @@
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
-const { runMatchingAlgorithm } = require("../../Services/matchingService");
+const { runMatchingAlgorithm, releaseStockReservation } = require("../../Services/matchingService");
+const { fetchUnitPrice, calculatePrice } = require("../../utils/pricingUtils");
 
 // ─── Shared Supabase select fragments ────────────────────────────────────────
 
@@ -65,6 +66,38 @@ const PROPOSAL_WITH_STOCK_AND_ORDER = `
   order:placed_orders!order_id (${ORDER_SELECT})
 `;
 
+// ─── Per-proposal price enrichment ───────────────────────────────────────────
+// Resolves unit price (farmer's or market fallback) then reuses calculatePrice.
+async function attachPricing(proposals) {
+  const today = new Date().toISOString().split("T")[0];
+  return Promise.all(
+    (proposals || []).map(async (p) => {
+      let unitPrice = p.stock?.price_per_kg > 0 ? p.stock.price_per_kg : null;
+      let priceSource = unitPrice != null ? "farmer" : null;
+
+      if (unitPrice == null) {
+        const fruit   = p.stock?.fruit_type ?? p.order?.fruit_type;
+        const variant = p.stock?.variant    ?? p.order?.variant;
+        const grade   = p.order?.grade;
+        if (fruit && variant && grade) {
+          unitPrice   = await fetchUnitPrice(fruit, variant, grade, today);
+          priceSource = unitPrice != null ? "market" : null;
+        }
+      }
+
+      const breakdown = calculatePrice(
+        { quantity: p.quantity_proposed ?? 0, distance_km: p.distance_km ?? 0 },
+        unitPrice,
+      );
+
+      return {
+        ...p,
+        pricing: { ...breakdown, estimatedTotal: breakdown.totalPrice, priceSource },
+      };
+    }),
+  );
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 /** Verify a buyer exists and return their user_id. */
@@ -123,12 +156,13 @@ const getProposalsForOrder = async (req, res) => {
     if (proposalError)
       return res.status(500).json({ error: proposalError.message });
 
+    const enriched = await attachPricing(proposals);
     return res
       .status(200)
       .json({
         order,
-        proposals: proposals || [],
-        totalProposals: proposals?.length ?? 0,
+        proposals: enriched,
+        totalProposals: enriched.length,
       });
   } catch (err) {
     console.error("[Matching] getProposalsForOrder:", err);
@@ -145,7 +179,7 @@ const getAllProposals = async (req, res) => {
       .from("placed_orders")
       .select("id")
       .eq("buyer_id", buyerId)
-      .eq("status", "PENDING_BUYER");
+      .in("status", ["PENDING_BUYER", "PENDING_FARMER"]);
 
     if (ordersError)
       return res.status(500).json({ error: ordersError.message });
@@ -159,17 +193,18 @@ const getAllProposals = async (req, res) => {
         "order_id",
         orders.map((o) => o.id),
       )
-      .in("status", ["PENDING_BUYER", "PENDING_FARMER", "ACCEPTED"])
+      .in("status", ["PENDING_BUYER", "PENDING_FARMER"])
       .order("created_at", { ascending: false });
 
     if (proposalError)
       return res.status(500).json({ error: proposalError.message });
 
+    const enriched = await attachPricing(proposals);
     return res
       .status(200)
       .json({
-        proposals: proposals || [],
-        totalProposals: proposals?.length ?? 0,
+        proposals: enriched,
+        totalProposals: enriched.length,
       });
   } catch (err) {
     console.error("[Matching] getAllProposals:", err);
@@ -211,13 +246,14 @@ const getProposalsByBuyerId = async (req, res) => {
     if (proposalError)
       return res.status(500).json({ error: proposalError.message });
 
+    const enriched = await attachPricing(proposals);
     return res
       .status(200)
       .json({
         buyerId,
         orders,
-        proposals: proposals || [],
-        totalProposals: proposals?.length ?? 0,
+        proposals: enriched,
+        totalProposals: enriched.length,
       });
   } catch (err) {
     console.error("[Matching] getProposalsByBuyerId:", err);
@@ -297,13 +333,14 @@ const getProposalsByFarmerId = async (req, res) => {
     if (proposalError)
       return res.status(500).json({ error: proposalError.message });
 
+    const enriched = await attachPricing(proposals);
     return res
       .status(200)
       .json({
         farmerId,
         stocks,
-        proposals: proposals || [],
-        totalProposals: proposals?.length ?? 0,
+        proposals: enriched,
+        totalProposals: enriched.length,
       });
   } catch (err) {
     console.error("[Matching] getProposalsByFarmerId:", err);
@@ -406,6 +443,8 @@ const approveProposal = async (req, res) => {
         updated_at: new Date().toISOString(),
       })
       .eq("id", proposal.order_id);
+
+    // Note: Cancellation of competing proposals happens when farmer accepts, handled by database triggers
 
     return res
       .status(200)

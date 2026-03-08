@@ -97,7 +97,7 @@ Follow the testing steps in `PAYHERE_PAYMENT_INTEGRATION.md`
 3. **Buyer approves proposal** → Status: `PENDING_FARMER`
 4. **Farmer accepts proposal** → Status: `AWAITING_PAYMENT`
 5. **Buyer initiates payment** → Redirected to PayHere
-6. **PayHere authorizes payment** → Status: `PAID_PENDING_DELIVERY`, Money held
+6. **PayHere authorizes payment** → Status: `AUTHORIZED_PAYMENT`, Money held
 7. **Transporter assigned** → Picks up goods
 8. **Transporter delivers** → Status: `DELIVERED`
 9. **Transporter confirms quality** → Triggers payment capture

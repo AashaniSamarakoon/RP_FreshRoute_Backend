@@ -14,6 +14,7 @@ const {
 const {
   runBatchMatching,
   markExpiredOrders,
+  releaseMatchedStockForExpiredPayments,
 } = require("./Services/matchingService");
 const {
   startSMSScheduler,
@@ -216,8 +217,9 @@ app.use("/api/buyer/payment", paymentRoutes);
 // PayHere IPN notification endpoint (no auth — called by PayHere server)
 app.use("/api/payhere", payhereRoutes);
 
-// PayHere preapproval HTML form page — no /api prefix (redirect target for mobile)
-app.use("/payhere", payhereRoutes);
+// Note: the old public form redirect path has been retired; payments now
+// originate via the mobile SDK, so there's no need to mount the router at
+// "/payhere" without the /api prefix.
 
 // Transporter delivery routes (quality check, pickup, delivery confirmation)
 app.use("/api/transporter/delivery", deliveryRoutes);
@@ -360,15 +362,16 @@ startServer();
 
 // ---------- SCHEDULED JOBS ----------
 // Run batch matching every 2 hours (at minute 0)
-cron.schedule("0 */2 * * *", async () => {
-  console.log("[Cron] Running scheduled batch matching...");
+cron.schedule("*/30 * * * *", async () => {  console.log("[Cron] Running scheduled batch matching...");
   await runBatchMatching();
 });
 
-// Mark expired orders daily at midnight
+// Mark expired orders and release stale MATCHED stock daily at midnight
 cron.schedule("0 0 * * *", async () => {
   console.log("[Cron] Checking for expired orders...");
   await markExpiredOrders();
+  // Bug 4 fix: release stock locked as MATCHED when buyer never pays within 48h
+  await releaseMatchedStockForExpiredPayments();
 });
 
 console.log(

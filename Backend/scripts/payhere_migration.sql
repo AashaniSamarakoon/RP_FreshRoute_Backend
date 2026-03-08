@@ -29,7 +29,7 @@ ALTER TABLE payments
 
 -- =============================================================================
 -- Trigger: auto-create an orders (transport-job) row when a placed_order
--- transitions to PAID_PENDING_DELIVERY.
+-- transitions to AUTHORIZED_PAYMENT.
 --
 -- Populated columns:
 --   buyer_id        <- placed_orders.buyer_id
@@ -52,9 +52,9 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  -- Only fire when transitioning INTO PAID_PENDING_DELIVERY and a farmer is assigned
-  IF NEW.status = 'PAID_PENDING_DELIVERY'
-     AND (OLD.status IS DISTINCT FROM 'PAID_PENDING_DELIVERY')
+  -- Only fire when transitioning INTO AUTHORIZED_PAYMENT and a farmer is assigned
+  IF NEW.status = 'AUTHORIZED_PAYMENT'
+     AND (OLD.status IS DISTINCT FROM 'AUTHORIZED_PAYMENT')
      AND NEW.selected_farmer_id IS NOT NULL
   THEN
     INSERT INTO orders (

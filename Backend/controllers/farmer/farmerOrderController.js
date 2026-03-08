@@ -1,7 +1,7 @@
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 
 // PATCH /api/farmer/orders/:orderId/packing
-// Transitions an order from PAID_PENDING_DELIVERY → PACKING once farmer starts packing.
+// Transitions an order from AUTHORIZED_PAYMENT → PACKING once farmer starts packing.
 const updateOrderStatusPacking = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -16,9 +16,9 @@ const updateOrderStatusPacking = async (req, res) => {
 
     if (!order)
       return res.status(404).json({ message: "Order not found or not assigned to you" });
-    if (order.status !== "PAID_PENDING_DELIVERY")
+    if (order.status !== "AUTHORIZED_PAYMENT")
       return res.status(400).json({
-        message: `Expected PAID_PENDING_DELIVERY, current status is: ${order.status}`,
+        message: `Expected AUTHORIZED_PAYMENT, current status is: ${order.status}`,
       });
 
     await supabase

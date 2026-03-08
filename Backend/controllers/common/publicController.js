@@ -33,7 +33,7 @@ const STATUS_EVENT_MAP = {
   PENDING_BUYER:         { label: "Buyer Reviewing",     phase: "order"    },
   MATCHED:               { label: "Farmer Matched",      phase: "matching" },
   AWAITING_PAYMENT:      { label: "Awaiting Payment",    phase: "payment"  },
-  PAID_PENDING_DELIVERY: { label: "Payment Confirmed",   phase: "payment"  },
+  AUTHORIZED_PAYMENT: { label: "Payment Confirmed",   phase: "payment"  },
   PACKING:               { label: "Farmer Packing",      phase: "handling" },
   READY_FOR_PICKUP:      { label: "Ready for Pickup",    phase: "handling" },
   IN_TRANSIT:            { label: "In Transit",           phase: "transit"  },

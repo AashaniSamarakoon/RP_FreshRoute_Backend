@@ -90,7 +90,7 @@ export class PaymentContract extends BaseContract {
         payment.updatedAt = now;
 
         order.paymentStatus = 'AUTHORIZED';
-        order.status = 'PAID_PENDING_DELIVERY';
+        order.status = 'AUTHORIZED_PAYMENT';
         order.updatedAt = now;
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
@@ -173,7 +173,7 @@ export class PaymentContract extends BaseContract {
 
         // Move order to the same waiting-for-delivery state as a direct payment
         order.paymentStatus = 'PREAPPROVED';
-        order.status = 'PAID_PENDING_DELIVERY';
+        order.status = 'AUTHORIZED_PAYMENT';
         order.updatedAt = now;
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
@@ -246,8 +246,8 @@ export class PaymentContract extends BaseContract {
 
         if (order.transporterId !== transporterId) throw new Error('Unauthorized: You are not assigned to this order');
 
-        if (order.status !== 'PAID_PENDING_DELIVERY' && order.status !== 'IN_TRANSIT') {
-            throw new Error('Cannot release payment — order must be in PAID_PENDING_DELIVERY or IN_TRANSIT');
+        if (order.status !== 'AUTHORIZED_PAYMENT' && order.status !== 'IN_TRANSIT') {
+            throw new Error('Cannot release payment — order must be in AUTHORIZED_PAYMENT or IN_TRANSIT');
         }
         if (payment.status !== 'AUTHORIZED') throw new Error('Payment is not yet authorized');
 

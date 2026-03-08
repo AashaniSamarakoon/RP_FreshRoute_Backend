@@ -110,7 +110,7 @@ const confirmQualityAndPickup = async (req, res) => {
 
     // Verify order is ready for pickup (payment authorized)
     if (
-      order.status !== "PAID_PENDING_DELIVERY" &&
+      order.status !== "AUTHORIZED_PAYMENT" &&
       order.payment_status !== "AUTHORIZED"
     ) {
       return res.status(400).json({

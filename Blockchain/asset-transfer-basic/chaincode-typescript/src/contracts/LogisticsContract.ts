@@ -71,7 +71,7 @@ export class LogisticsContract extends BaseContract {
         // Update order with assigned transporter
         order.transporterId = transporterId;
         // Only advance status if the order is in a state that makes sense
-        if (order.status === 'CONFIRMED' || order.status === 'PAID_PENDING_DELIVERY') {
+        if (order.status === 'CONFIRMED' || order.status === 'AUTHORIZED_PAYMENT') {
             order.status = 'MATCHED';
         }
         order.updatedAt = now;

@@ -354,4 +354,81 @@ export class OrderContract extends BaseContract {
         // Delete the order
         await ctx.stub.deleteState(orderId);
     }
+
+    /**
+     * RegisterAcceptedDeal – called by the backend when a farmer accepts a match proposal.
+     *
+     * Because the off-chain matching algorithm creates proposals without a farmer-initiated
+     * on-chain step, this function collapses the full proposal lifecycle into a single
+     * atomic ledger write at the moment of acceptance.  It requires the farmer's identity
+     * so the on-chain record is cryptographically signed by the party forming the contract.
+     *
+     * The function:
+     *   1. Verifies the order and harvest exist on-chain.
+     *   2. Confirms the harvest belongs to the calling farmer.
+     *   3. Writes an ACCEPTED proposal asset to the ledger (immutable contract record).
+     *   4. Marks the order as CONFIRMED.
+     *   5. Moves the quantity from available → sold on the harvest asset.
+     */
+    @Transaction()
+    async RegisterAcceptedDeal(ctx: Context, proposalId: string, orderId: string, harvestId: string, quantity: string, unitPrice: string): Promise<void> {
+        const client = this.getClient(ctx);
+        if (client.role !== 'farmer') throw new Error('Only farmers can register accepted deals');
+
+        const qty = parseInt(quantity);
+        const price = parseFloat(unitPrice);
+        if (qty <= 0) throw new Error('Quantity must be positive');
+
+        // 1. Verify order exists
+        const orderData = await ctx.stub.getState(orderId);
+        if (!orderData || orderData.length === 0) throw new Error(`Order ${orderId} not found on ledger`);
+        const order = JSON.parse(orderData.toString());
+
+        // 2. Verify harvest exists and belongs to this farmer
+        const harvestData = await ctx.stub.getState(harvestId);
+        if (!harvestData || harvestData.length === 0) throw new Error(`Harvest ${harvestId} not found on ledger`);
+        const harvest = JSON.parse(harvestData.toString());
+
+        if (harvest.farmerId !== client.id) throw new Error('Unauthorized: Harvest does not belong to this farmer');
+
+        // 3. Timestamp
+        const txTimestamp = ctx.stub.getTxTimestamp();
+        const acceptedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
+
+        // 4. Write ACCEPTED proposal record (immutable contract between buyer and farmer)
+        const proposal = {
+            id: proposalId,
+            docType: 'proposal',
+            orderId: orderId,
+            harvestId: harvestId,
+            farmerId: client.id,
+            buyerId: order.buyerId,
+            quantity: qty,
+            unitPrice: isNaN(price) ? 0 : price,
+            totalPrice: isNaN(price) ? 0 : qty * price,
+            status: 'ACCEPTED',
+            createdAt: acceptedAt,
+            acceptedAt: acceptedAt,
+            updatedAt: acceptedAt,
+        };
+
+        // 5. Mark order as CONFIRMED
+        order.status = 'CONFIRMED';
+        order.harvestId = harvestId;
+        order.sellerId = client.id;
+        order.unitPrice = proposal.unitPrice;
+        order.totalPrice = proposal.totalPrice;
+        order.confirmedAt = acceptedAt;
+        order.updatedAt = acceptedAt;
+
+        // 6. Move quantity from available → sold on the harvest
+        harvest.availableQuantity = Math.max(0, (harvest.availableQuantity || 0) - qty);
+        harvest.soldQuantity = (harvest.soldQuantity || 0) + qty;
+        harvest.updatedAt = acceptedAt;
+
+        // 7. Atomic ledger write
+        await ctx.stub.putState(proposalId, Buffer.from(JSON.stringify(proposal)));
+        await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        await ctx.stub.putState(harvestId, Buffer.from(JSON.stringify(harvest)));
+    }
 }

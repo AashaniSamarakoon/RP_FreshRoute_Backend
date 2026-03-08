@@ -75,7 +75,7 @@ router.get("/estimated-stocks", getEstimatedStocks);
 router.get("/blockchain/history/:stockId", getBatchHistory);
 router.get("/blockchain/verify/:stockId", getVerificationStatus);
 
-// Order lifecycle status updates (PAID_PENDING_DELIVERY → PACKING → READY_FOR_PICKUP)
+// Order lifecycle status updates (AUTHORIZED_PAYMENT → PACKING → READY_FOR_PICKUP)
 router.patch("/orders/:orderId/packing", updateOrderStatusPacking);
 router.patch("/orders/:orderId/ready",   updateOrderStatusReady);
 
