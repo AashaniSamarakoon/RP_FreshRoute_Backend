@@ -27,6 +27,7 @@ const {
 const {
   updateOrderStatusPacking,
   updateOrderStatusReady,
+  getFarmerOrders,
 } = require("../../controllers/farmer/farmerOrderController");
 const {
   getNotifications: getNotificationsNew,
@@ -78,6 +79,9 @@ router.get("/blockchain/verify/:stockId", getVerificationStatus);
 // Order lifecycle status updates (AUTHORIZED_PAYMENT → PACKING → READY_FOR_PICKUP)
 router.patch("/orders/:orderId/packing", updateOrderStatusPacking);
 router.patch("/orders/:orderId/ready",   updateOrderStatusReady);
+
+// GET orders assigned to this farmer (only after matching)
+router.get("/orders", getFarmerOrders);
 
 // Feedback
 router.get("/feedback", getFeedback);

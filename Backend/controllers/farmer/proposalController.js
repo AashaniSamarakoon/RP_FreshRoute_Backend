@@ -2,6 +2,7 @@ const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { calculateDistanceKm } = require("../../utils/logisticsUtils");
 const { fetchUnitPrice, calculatePrice, calculateFarmerPrice } = require("../../utils/pricingUtils");
 const { getContract } = require("../../Services/blockchain/contractService");
+const { sendSystemNotification } = require("../../Services/notificationsService");
 
 // ─── Farmer-side proposal pricing ────────────────────────────────────────────
 // Uses farmer-specific breakdown: no delivery fee, 1.4% platform deduction.
@@ -277,7 +278,22 @@ const acceptProposal = async (req, res) => {
 
     // Note: Cancellation of competing proposals and stock release is handled by database triggers
 
-    // TODO: Notify buyer to complete payment
+    // Notify buyer that farmer accepted and payment is now required
+    try {
+      const { data: ord } = await supabase
+        .from("placed_orders")
+        .select("buyer_id")
+        .eq("id", proposal.order_id)
+        .single();
+      if (ord && ord.buyer_id) {
+        await sendSystemNotification(ord.buyer_id, {
+          message: `Farmer accepted your proposal for order ${proposal.order_id}. Please complete payment.`,
+          severity: "info",
+        });
+      }
+    } catch (notifErr) {
+      console.warn("Failed to notify buyer about acceptance:", notifErr.message);
+    }
 
     return res.status(200).json({
       message:
@@ -336,7 +352,22 @@ const rejectProposal = async (req, res) => {
 
     // Note: Order status reset to OPEN and stock release are handled by database triggers
 
-    // TODO: Notify buyer that farmer rejected
+    // Notify buyer that farmer rejected the proposal
+    try {
+      const { data: ord } = await supabase
+        .from("placed_orders")
+        .select("buyer_id")
+        .eq("id", proposal.order_id)
+        .single();
+      if (ord && ord.buyer_id) {
+        await sendSystemNotification(ord.buyer_id, {
+          message: `Farmer rejected your proposal for order ${proposal.order_id}. Please choose another farmer.`,
+          severity: "info",
+        });
+      }
+    } catch (notifErr) {
+      console.warn("Failed to notify buyer about rejection:", notifErr.message);
+    }
 
     return res.status(200).json({
       message: "Proposal rejected. Buyer can select another farmer.",

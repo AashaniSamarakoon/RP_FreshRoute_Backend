@@ -98,6 +98,16 @@ Follow the testing steps in `PAYHERE_PAYMENT_INTEGRATION.md`
 4. **Farmer accepts proposal** → Status: `AWAITING_PAYMENT`
 5. **Buyer initiates payment** → Redirected to PayHere
 6. **PayHere authorizes payment** → Status: `AUTHORIZED_PAYMENT`, Money held
+
+### Farmer App Status Updates
+After payment authorization, farmers can update the order lifecycle via three endpoints:
+
+* `GET /api/farmer/orders` — fetch orders assigned to the farmer (starts at `MATCHED` and includes all later states)
+* `PATCH /api/farmer/orders/:orderId/packing` — move `AUTHORIZED_PAYMENT` → `PACKING`
+* `PATCH /api/farmer/orders/:orderId/ready`  — move `PACKING` → `READY_FOR_PICKUP`
+
+These endpoints require the caller to be the selected farmer.  Each call also
+sends a system notification to the buyer so they are informed of progress.
 7. **Transporter assigned** → Picks up goods
 8. **Transporter delivers** → Status: `DELIVERED`
 9. **Transporter confirms quality** → Triggers payment capture
