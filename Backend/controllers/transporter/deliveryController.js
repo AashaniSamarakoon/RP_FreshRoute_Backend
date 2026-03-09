@@ -5,6 +5,7 @@ const { fetchUnitPrice } = require("../../utils/pricingUtils");
 const {
   sendSystemNotification,
 } = require("../../Services/notificationsService");
+const { submitWithTx } = require("../../utils/blockchainUtils");
 
 // Helper: Get transporter ID from user ID
 // transporter table only stores user_id so we return that value directly
@@ -148,18 +149,14 @@ async function processPickupPayment(orderId, transporterId) {
   try {
     // ensure a ledger payment exists and is authorized
     try {
-      await contract.submitTransaction("AuthorizePayment", blockchainOrderId, "");
+      const authTx = await submitWithTx(contract, "AuthorizePayment", blockchainOrderId, "");
+      console.log("AuthorizePayment tx", authTx);
     } catch (authErr) {
       // if not found, create then authorize
       if (authErr.message && authErr.message.includes("not found")) {
         try {
-          await contract.submitTransaction(
-            "InitiatePayment",
-            blockchainOrderId,
-            (finalTotal || 0).toString(),
-            "payhere",
-          );
-          await contract.submitTransaction("AuthorizePayment", blockchainOrderId, "");
+          await submitWithTx(contract, "InitiatePayment", blockchainOrderId, (finalTotal || 0).toString(), "payhere");
+          await submitWithTx(contract, "AuthorizePayment", blockchainOrderId, "");
         } catch (inner) {
           console.warn("ledger payment init/authorize failed", inner.message);
         }
@@ -168,7 +165,8 @@ async function processPickupPayment(orderId, transporterId) {
       }
     }
 
-    await contract.submitTransaction(
+    const relTx = await submitWithTx(
+      contract,
       "ReleasePayment",
       blockchainOrderId,
       blockchainTransporterId,
@@ -176,11 +174,14 @@ async function processPickupPayment(orderId, transporterId) {
       (transporterFee || 0).toString(),
       (platformFee || 0).toString(),
     );
-    await contract.submitTransaction(
+    console.log("ReleasePayment tx", relTx);
+    const confTx = await submitWithTx(
+      contract,
       "ConfirmPaymentRelease",
       blockchainOrderId,
       "Quality confirmed – pickup",
     );
+    console.log("ConfirmPaymentRelease tx", confTx);
   } finally {
     await close();
   }
@@ -441,11 +442,13 @@ const confirmQualityAndPickup = async (req, res) => {
           userId,
           "PaymentContract",
         );
-        await contract.submitTransaction(
+        const refundTx = await submitWithTx(
+          contract,
           "RefundPayment",
           `ORDER_${orderId}`,
           "Poor quality at pickup",
         );
+        console.log("RefundPayment tx", refundTx);
         await close();
       } catch (bcErr) {
         console.error("[Blockchain] RefundPayment failed:", bcErr.message);
@@ -570,7 +573,8 @@ const confirmQualityAndPickup = async (req, res) => {
     try {
       const { contract, close } = await getContract(userId, "PaymentContract");
       try {
-        await contract.submitTransaction(
+        const relTx = await submitWithTx(
+          contract,
           "ReleasePayment",
           blockchainOrderId,
           blockchainTransporterId,
@@ -580,6 +584,7 @@ const confirmQualityAndPickup = async (req, res) => {
         );
         console.log(
           "[Blockchain] Payment marked for release after quality check at pickup",
+          relTx,
         );
       } finally {
         await close();
@@ -695,12 +700,13 @@ const confirmQualityAndPickup = async (req, res) => {
           "PaymentContract",
         );
         try {
-          await contract.submitTransaction(
+          const confTx = await submitWithTx(
+            contract,
             "ConfirmPaymentRelease",
             blockchainOrderId,
             "Bank slip verified - Quality confirmed",
           );
-          console.log("[Blockchain] Payment release confirmed");
+          console.log("[Blockchain] Payment release confirmed", confTx);
         } finally {
           await close();
         }

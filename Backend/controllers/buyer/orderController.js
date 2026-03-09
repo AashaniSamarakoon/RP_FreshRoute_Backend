@@ -1,5 +1,6 @@
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
+const { submitWithTx } = require("../../utils/blockchainUtils");
 const { runMatchingAlgorithm } = require("../../Services/matchingService");
 const { calculateDistanceKm } = require("../../utils/logisticsUtils");
 const { fetchUnitPrice, calculatePrice } = require("../../utils/pricingUtils");
@@ -65,7 +66,8 @@ const placeOrder = async (req, res) => {
     try {
       const blockchainOrderId = `ORDER_${orderData.id}`;
       const { contract, close } = await getContract(userId, "OrderContract");
-      await contract.submitTransaction(
+      const txId = await submitWithTx(
+        contract,
         "PlaceOrder",
         blockchainOrderId,
         fruit_type,
@@ -75,7 +77,7 @@ const placeOrder = async (req, res) => {
         required_date,
       );
       await close();
-      console.log("[Blockchain] Order placed on ledger", blockchainOrderId);
+      console.log("[Blockchain] Order placed on ledger", blockchainOrderId, "tx", txId);
     } catch (bcErr) {
       console.error("[Blockchain] PlaceOrder failed:", bcErr.message);
       // continue, database is still valid

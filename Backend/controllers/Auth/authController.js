@@ -2,6 +2,7 @@ const {
   registerAndEnrollUser,
 } = require("../../Services/blockchain/identityService");
 const { getContract } = require("../../Services/blockchain/contractService"); // Import the gateway bridge
+const { submitWithTx } = require("../../utils/blockchainUtils");
 const { supabase, supabaseAdmin } = require("../../utils/supabaseClient");
 
 // Signup
@@ -97,13 +98,9 @@ const signup = async (req, res) => {
           "UserContract",
         );
         try {
-          await contract.submitTransaction(
-            "RegisterUser",
-            user.id,
-            fullName,
-            normalizedRole,
-          );
+          const regTx = await submitWithTx(contract, "RegisterUser", user.id, fullName, normalizedRole);
           ledgerStatus = "Registered on Ledger";
+          console.log("RegisterUser tx", regTx);
         } catch (txError) {
           ledgerStatus = "Identity Created, Ledger Failed";
         } finally {

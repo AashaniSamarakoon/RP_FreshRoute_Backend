@@ -120,8 +120,8 @@ const submitPredictStock = async (req, res) => {
 
     try {
       const { contract, close } = await getContract(userId, "StockContract");
-
-      await contract.submitTransaction(
+      const txId = await submitWithTx(
+        contract,
         "CreateHarvest",
         harvestId,
         `${fruit_type}_${variant}`,
@@ -131,10 +131,10 @@ const submitPredictStock = async (req, res) => {
         grade || "",
         estimated_harvest_date || new Date().toISOString().split("T")[0],
       );
-
       await close();
       blockchainStatus = "Success";
-      console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id}`);
+      console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id} (tx=${txId})`);
+      data.blockchainTxId = txId;
     } catch (bcError) {
       console.error("Blockchain Failed:", bcError);
       blockchainStatus = "Failed";
@@ -219,22 +219,18 @@ const updateStock = async (req, res) => {
 
     try {
       const { contract, close } = await getContract(userId, "StockContract");
-
-      // Call the Updated Chaincode Function
-      // Note: We pass 'newImageHash' (empty string if no new image)
-      // The chaincode logic I gave you handles the empty string check.
-      await contract.submitTransaction(
+      const txId = await submitWithTx(
+        contract,
         "UpdateHarvest",
         harvestId,
         updateData.quantity.toString(),
         updateData.price_per_kg.toString(),
-        status || "FRESH", // Default status if not provided
-        newImageHash, // <--- Send new hash (or empty string)
+        status || "FRESH",
+        newImageHash,
       );
-
       await close();
       blockchainStatus = "Success";
-      console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId}`);
+      console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId} (tx=${txId})`);
     } catch (bcError) {
       console.error("Blockchain Update Failed:", bcError);
       blockchainStatus = "Failed";

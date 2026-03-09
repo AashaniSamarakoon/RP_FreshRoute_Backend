@@ -222,7 +222,8 @@ const acceptProposal = async (req, res) => {
     try {
       const unitForChain = unit != null ? unit.toString() : "0";
       const { contract, close } = await getContract(userId, "OrderContract");
-      await contract.submitTransaction(
+      const txId = await submitWithTx(
+        contract,
         "RegisterAcceptedDeal",
         `PROPOSAL_${proposalId}`,
         `ORDER_${proposal.order_id}`,
@@ -232,10 +233,14 @@ const acceptProposal = async (req, res) => {
       );
       await close();
       blockchainStatus = "Success";
-      console.log(`[Blockchain] RegisterAcceptedDeal Success: PROPOSAL_${proposalId}`);
+      console.log(`[Blockchain] RegisterAcceptedDeal Success: PROPOSAL_${proposalId} tx=${txId}`);
     } catch (bcErr) {
-      console.error("[Blockchain] RegisterAcceptedDeal failed:", bcErr.message);
+      // ledger call failed – log and allow the workflow to continue with a failed status
       blockchainStatus = "Failed";
+      console.error(
+        `[Blockchain] RegisterAcceptedDeal Failed: PROPOSAL_${proposalId}`,
+        bcErr.message,
+      );
     }
 
     // 5. Update proposal status (triggers will handle order/stock status updates)
