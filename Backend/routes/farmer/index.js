@@ -12,7 +12,13 @@ const {
   getFeedback,
   createFeedback,
   getHistoricalPrices,
+  getFarmerOrdersOverview,
+  getFarmerComplaints,
+  getFarmerComplaintDetails,
+  getFarmerUserProfile,
+  updateFarmerUserProfile,
 } = require("../../controllers/farmer/farmerController");
+const { getFruits } = require("../../controllers/common/fruitController");
 const {
   getSMSPreferences,
   updateSMSPreferences,
@@ -32,6 +38,9 @@ const router = express.Router();
 // Dashboard & Home
 router.get("/dashboard", getDashboard);
 router.get("/home", getHomeSummary);
+
+// Orders Overview
+router.get("/orders/overview", getFarmerOrdersOverview);
 
 // Forecasts – handled by shared router mounted globally
 
@@ -61,8 +70,19 @@ router.patch("/old-notifications/:id/read", markNotificationRead);
 router.get("/feedback", getFeedback);
 router.post("/feedback", createFeedback);
 
-// SMS Preferences
-router.get("/sms/preferences", getSMSPreferences);
-router.patch("/sms/preferences", updateSMSPreferences);
+// Complaints
+router.get("/complaints", getFarmerComplaints);
+router.get("/complaints/:id", getFarmerComplaintDetails);
+
+// User Profile (from users table)
+router.get("/user-profile", getFarmerUserProfile);
+router.put("/user-profile", updateFarmerUserProfile);
+
+// Fruits for selection
+router.get("/fruits", getFruits);
+
+// SMS Preferences moved to /api/sms/preferences
+// router.get("/sms/preferences", getSMSPreferences);
+// router.patch("/sms/preferences", updateSMSPreferences);
 
 module.exports = router;

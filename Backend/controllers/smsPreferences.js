@@ -1,4 +1,4 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabase } = require("../utils/supabaseClient");
 
 /**
  * Get farmer's SMS preferences

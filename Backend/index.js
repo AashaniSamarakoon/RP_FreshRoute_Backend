@@ -47,8 +47,12 @@ const farmerRoutes = require("./routes/farmer");
 const trustRoutes = require("./routes/common/trustRoutes");
 const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
 const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
+const { getFarmerComplaints, getFarmerComplaintDetails, getFarmerUserProfile, updateFarmerUserProfile } = require("./controllers/farmer/farmerController");
+const { getFruits } = require("./controllers/common/fruitController");
 
 const alertRoutes = require("./routes/alertRoutes");
+const smsRoutes = require("./routes/smsRoutes");
+const ordersRoutes = require("./routes/farmer/ordersRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
 const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
 const paymentSlipRoutes = require("./routes/buyer/paymentSlipRoutes");
@@ -101,6 +105,10 @@ app.use((req, res, next) => {
     "/dashboard",
     "/home",
     "/accuracy",
+    "/orders",
+    "/complaints",
+    "/user-profile",
+    "/fruits",
   ];
   const missingApi = !req.path.startsWith("/api/");
   const matches = prefixable.some((route) => req.path.startsWith(route));
@@ -121,6 +129,17 @@ app.use(
 
 // Farmer routes (forecast, notifications, SMS, etc.)
 app.use("/api/farmer", authMiddleware, requireRole("farmer"), farmerRoutes);
+
+// Farmer user profile (accessible at /api/user-profile for frontend convenience)
+app.get("/api/user-profile", authMiddleware, requireRole("farmer"), getFarmerUserProfile);
+app.put("/api/user-profile", authMiddleware, requireRole("farmer"), updateFarmerUserProfile);
+
+// Fruits for farmer selection (accessible at /api/fruits)
+app.get("/api/fruits", authMiddleware, requireRole("farmer"), getFruits);
+
+// Farmer complaints (accessible at /api/complaints for frontend convenience)
+app.get("/api/complaints", authMiddleware, requireRole("farmer"), getFarmerComplaints);
+app.get("/api/complaints/:id", authMiddleware, requireRole("farmer"), getFarmerComplaintDetails);
 
 // Fruit properties (GET id, fruit_name, variant)
 // public endpoint – the frontend needs fruit list even before login
@@ -160,6 +179,12 @@ app.use("/api/trust", trustRoutes);
 
 // Alert routes (for notifications and SMS)
 app.use("/api/alerts", alertRoutes);
+
+// SMS preferences routes (accessible by any authenticated user)
+app.use("/api/sms", authMiddleware, smsRoutes);
+
+// Orders overview routes (farmer-specific)
+app.use("/api/orders", authMiddleware, requireRole("farmer"), ordersRoutes);
 
 // Payment slip routes (Bank slip upload & verification - Fully Automated)
 app.use("/api/buyer/payment-slip", paymentSlipRoutes);
