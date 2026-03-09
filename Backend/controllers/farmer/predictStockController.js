@@ -3,6 +3,7 @@ const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { onNewStockAdded } = require("../../Services/matchingService");
 const { uploadImageToSupabase } = require("../../utils/uploadUtils");
+const { submitWithTx } = require("../../utils/blockchainUtils");
 
 // Get stock by ID
 const getStockById = async (req, res) => {
@@ -135,14 +136,18 @@ const submitPredictStock = async (req, res) => {
       blockchainStatus = "Success";
       console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id} (tx=${txId})`);
       data.blockchainTxId = txId;
-      // store txId in Supabase record for future reference
-      try {
-        await supabase
-          .from("estimated_stock")
-          .update({ blockchain_tx_id: txId })
-          .eq("id", data.id);
-      } catch (_e) {
-        console.warn("Failed to persist blockchain txId for stock", data.id, _e.message);
+      // store txId in Supabase record for future reference (append to array)
+      if (txId) {
+        try {
+          const existing = data.blockchain_tx_id || [];
+          const arr = Array.isArray(existing) ? existing : [existing];
+          await supabase
+            .from("estimated_stock")
+            .update({ blockchain_tx_id: [...arr, txId] })
+            .eq("id", data.id);
+        } catch (_e) {
+          console.warn("Failed to persist blockchain txId for stock", data.id, _e.message);
+        }
       }
     } catch (bcError) {
       console.error("Blockchain Failed:", bcError);
@@ -242,9 +247,12 @@ const updateStock = async (req, res) => {
       console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId} (tx=${txId})`);
       // persist tx id on update as well
       try {
+        // use existingStock since `data` is undefined in this scope
+        const existing = existingStock.blockchain_tx_id || [];
+        const arr = Array.isArray(existing) ? existing : [existing];
         await supabase
           .from("estimated_stock")
-          .update({ blockchain_tx_id: txId })
+          .update({ blockchain_tx_id: [...arr, txId] })
           .eq("id", stockId);
       } catch (_e) {
         console.warn("Failed to persist blockchain txId for stock update", stockId, _e.message);
@@ -263,6 +271,57 @@ const updateStock = async (req, res) => {
   } catch (err) {
     console.error("Update Error:", err);
     res.status(500).json({ message: err.message });
+  }
+};
+
+// DELETE /api/farmer/predictStock/:stockId
+// remove harvest both from Supabase and blockchain
+const deleteStock = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { stockId } = req.params;
+    if (!stockId) return res.status(400).json({ message: "Stock ID is required" });
+
+    // verify ownership
+    const { data: existingStock, error: fetchError } = await supabase
+      .from("estimated_stock")
+      .select("*")
+      .eq("id", stockId)
+      .single();
+
+    if (fetchError || !existingStock)
+      return res.status(404).json({ message: "Stock not found" });
+
+    if (existingStock.farmer_id !== userId)
+      return res.status(403).json({ message: "Forbidden" });
+
+    // delete from Supabase
+    const { error: deleteError } = await supabase
+      .from("estimated_stock")
+      .delete()
+      .eq("id", stockId);
+
+    if (deleteError) throw new Error("Database delete failed: " + deleteError.message);
+
+    // delete from blockchain
+    let blockchainStatus = "Skipped";
+    try {
+      const { contract, close } = await getContract(userId, "StockContract");
+      const txId = await submitWithTx(contract, "DeleteHarvest", `HARVEST_${stockId}`);
+      await close();
+      blockchainStatus = "Success";
+      console.log(`[Blockchain] DeleteHarvest Success: HARVEST_${stockId} (tx=${txId})`);
+    } catch (bcErr) {
+      console.error("Blockchain Delete Failed:", bcErr);
+      blockchainStatus = "Failed";
+    }
+
+    return res.json({ success: true, message: "Stock deleted", blockchainStatus });
+  } catch (err) {
+    console.error("Delete Error:", err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -298,4 +357,10 @@ const getEstimatedStocks = async (req, res) => {
   }
 };
 
-module.exports = { submitPredictStock, getStockById, updateStock, getEstimatedStocks };
+module.exports = {
+  submitPredictStock,
+  getStockById,
+  updateStock,
+  getEstimatedStocks,
+  deleteStock,
+};

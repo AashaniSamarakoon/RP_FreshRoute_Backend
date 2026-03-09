@@ -102,11 +102,18 @@ const signup = async (req, res) => {
           ledgerStatus = "Registered on Ledger";
           console.log("RegisterUser tx", regTx);
           if (regTx) {
-            // store txId on user record
+            // store txId on user record (append to array)
             try {
+              const { data: existingUser } = await supabaseAdmin
+                .from("users")
+                .select("blockchain_tx_id")
+                .eq("id", user.id)
+                .single();
+              const existing = existingUser?.blockchain_tx_id || [];
+              const arr = Array.isArray(existing) ? existing : [existing];
               await supabaseAdmin
                 .from("users")
-                .update({ blockchain_tx_id: regTx })
+                .update({ blockchain_tx_id: [...arr, regTx] })
                 .eq("id", user.id);
             } catch (_e) {
               console.warn("Failed to persist user blockchain txId", _e.message);

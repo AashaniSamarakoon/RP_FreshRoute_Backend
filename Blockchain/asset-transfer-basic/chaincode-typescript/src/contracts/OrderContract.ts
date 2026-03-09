@@ -5,7 +5,7 @@ import { BaseContract } from './BaseContract';
 export class OrderContract extends BaseContract {
 
     @Transaction()
-    async PlaceOrder(ctx: Context, orderId: string, fruitType: string, variant: string, grade: string, quantity: string, requiredDate: string): Promise<void> {
+    async PlaceOrder(ctx: Context, orderId: string, fruitType: string, variant: string, grade: string, quantity: string, requiredDate: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'buyer') throw new Error('Only buyers can place orders');
 
@@ -32,10 +32,11 @@ export class OrderContract extends BaseContract {
 
         // Write to ledger
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async CreateProposal(ctx: Context, proposalId: string, orderId: string, harvestId: string, quantity: string): Promise<void> {
+    async CreateProposal(ctx: Context, proposalId: string, orderId: string, harvestId: string, quantity: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can create proposals');
 
@@ -85,10 +86,11 @@ export class OrderContract extends BaseContract {
         // 6. Write to ledger
         await ctx.stub.putState(proposalId, Buffer.from(JSON.stringify(proposal)));
         await ctx.stub.putState(harvestId, Buffer.from(JSON.stringify(harvest)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async ApproveProposal(ctx: Context, proposalId: string): Promise<void> {
+    async ApproveProposal(ctx: Context, proposalId: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'buyer') throw new Error('Only buyers can approve proposals');
 
@@ -122,10 +124,11 @@ export class OrderContract extends BaseContract {
         // 7. Write to ledger
         await ctx.stub.putState(proposalId, Buffer.from(JSON.stringify(proposal)));
         await ctx.stub.putState(proposal.orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async AcceptProposal(ctx: Context, proposalId: string): Promise<void> {
+    async AcceptProposal(ctx: Context, proposalId: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can accept proposals');
 
@@ -172,10 +175,11 @@ export class OrderContract extends BaseContract {
         await ctx.stub.putState(proposalId, Buffer.from(JSON.stringify(proposal)));
         await ctx.stub.putState(proposal.orderId, Buffer.from(JSON.stringify(order)));
         await ctx.stub.putState(proposal.harvestId, Buffer.from(JSON.stringify(harvest)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async RejectProposal(ctx: Context, proposalId: string): Promise<void> {
+    async RejectProposal(ctx: Context, proposalId: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can reject proposals');
 
@@ -212,10 +216,11 @@ export class OrderContract extends BaseContract {
         await ctx.stub.putState(proposalId, Buffer.from(JSON.stringify(proposal)));
         await ctx.stub.putState(proposal.orderId, Buffer.from(JSON.stringify(order)));
         await ctx.stub.putState(proposal.harvestId, Buffer.from(JSON.stringify(harvest)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async ExpireProposal(ctx: Context, proposalId: string): Promise<void> {
+    async ExpireProposal(ctx: Context, proposalId: string): Promise<{ txId: string }> {
         // This can be called by the system or manually to expire proposals
 
         // 1. Get proposal
@@ -259,10 +264,11 @@ export class OrderContract extends BaseContract {
 
         // 7. Write proposal
         await ctx.stub.putState(proposalId, Buffer.from(JSON.stringify(proposal)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async CancelOrder(ctx: Context, orderId: string): Promise<void> {
+    async CancelOrder(ctx: Context, orderId: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'buyer') throw new Error('Only buyers can cancel orders');
 
@@ -291,6 +297,7 @@ export class OrderContract extends BaseContract {
         }
 
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction(false)
@@ -308,7 +315,7 @@ export class OrderContract extends BaseContract {
     }
 
     @Transaction()
-    async UpdateOrderQuantity(ctx: Context, orderId: string, newQuantity: number): Promise<void> {
+    async UpdateOrderQuantity(ctx: Context, orderId: string, newQuantity: number): Promise<{ txId: string }> {
         const orderData = await ctx.stub.getState(orderId);
         const order = JSON.parse(orderData.toString());
         const client = this.getClient(ctx);
@@ -328,10 +335,11 @@ export class OrderContract extends BaseContract {
         order.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async DeleteOrder(ctx: Context, orderId: string): Promise<void> {
+    async DeleteOrder(ctx: Context, orderId: string): Promise<{ txId: string }> {
         const orderData = await ctx.stub.getState(orderId);
         if (!orderData || orderData.length === 0) throw new Error('Order not found');
         const order = JSON.parse(orderData.toString());
@@ -353,6 +361,7 @@ export class OrderContract extends BaseContract {
 
         // Delete the order
         await ctx.stub.deleteState(orderId);
+        return { txId: ctx.stub.getTxID() };
     }
 
     /**
@@ -371,7 +380,7 @@ export class OrderContract extends BaseContract {
      *   5. Moves the quantity from available → sold on the harvest asset.
      */
     @Transaction()
-    async RegisterAcceptedDeal(ctx: Context, proposalId: string, orderId: string, harvestId: string, quantity: string, unitPrice: string): Promise<void> {
+    async RegisterAcceptedDeal(ctx: Context, proposalId: string, orderId: string, harvestId: string, quantity: string, unitPrice: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can register accepted deals');
 
@@ -430,5 +439,6 @@ export class OrderContract extends BaseContract {
         await ctx.stub.putState(proposalId, Buffer.from(JSON.stringify(proposal)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
         await ctx.stub.putState(harvestId, Buffer.from(JSON.stringify(harvest)));
+        return { txId: ctx.stub.getTxID() };
     }
 }

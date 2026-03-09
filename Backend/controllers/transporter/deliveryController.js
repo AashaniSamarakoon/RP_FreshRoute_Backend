@@ -152,9 +152,16 @@ async function processPickupPayment(orderId, transporterId) {
       const authTx = await submitWithTx(contract, "AuthorizePayment", blockchainOrderId, "");
       console.log("AuthorizePayment tx", authTx);
         if (authTx) {
+          const { data: existing } = await supabase
+            .from("payments")
+            .select("blockchain_tx_id")
+            .eq("order_id", orderId)
+            .single();
+          const arrExist = existing?.blockchain_tx_id || [];
+          const arr = Array.isArray(arrExist) ? arrExist : [arrExist];
           await supabase
             .from("payments")
-            .update({ blockchain_tx_id: authTx })
+            .update({ blockchain_tx_id: [...arr, authTx] })
             .eq("order_id", orderId);
         }
       } catch (authErr) {
@@ -164,9 +171,16 @@ async function processPickupPayment(orderId, transporterId) {
             await submitWithTx(contract, "InitiatePayment", blockchainOrderId, (finalTotal || 0).toString(), "payhere");
             const authTx2 = await submitWithTx(contract, "AuthorizePayment", blockchainOrderId, "");
             if (authTx2) {
+              const { data: existing } = await supabase
+                .from("payments")
+                .select("blockchain_tx_id")
+                .eq("order_id", orderId)
+                .single();
+              const arrExist = existing?.blockchain_tx_id || [];
+              const arr = Array.isArray(arrExist) ? arrExist : [arrExist];
               await supabase
                 .from("payments")
-                .update({ blockchain_tx_id: authTx2 })
+                .update({ blockchain_tx_id: [...arr, authTx2] })
                 .eq("order_id", orderId);
             }
           } catch (inner) {
@@ -188,13 +202,27 @@ async function processPickupPayment(orderId, transporterId) {
       );
       console.log("ReleasePayment tx", relTx);
       if (relTx) {
+        const { data: existing } = await supabase
+          .from("payments")
+          .select("blockchain_tx_id")
+          .eq("order_id", orderId)
+          .single();
+        const arrExist = existing?.blockchain_tx_id || [];
+        const arr = Array.isArray(arrExist) ? arrExist : [arrExist];
         await supabase
           .from("payments")
-          .update({ blockchain_tx_id: relTx })
+          .update({ blockchain_tx_id: [...arr, relTx] })
           .eq("order_id", orderId);
+        // also append to order record
+        const { data: existingOrder } = await supabase
+          .from("placed_orders")
+          .select("blockchain_tx_id")
+          .eq("id", orderId)
+          .single();
+        const ordreArr = Array.isArray(existingOrder?.blockchain_tx_id) ? existingOrder.blockchain_tx_id : [existingOrder?.blockchain_tx_id];
         await supabase
           .from("placed_orders")
-          .update({ blockchain_tx_id: relTx })
+          .update({ blockchain_tx_id: [...ordreArr, relTx] })
           .eq("id", orderId);
       }
       const confTx = await submitWithTx(
@@ -205,9 +233,16 @@ async function processPickupPayment(orderId, transporterId) {
       );
       console.log("ConfirmPaymentRelease tx", confTx);
       if (confTx) {
+        const { data: existing } = await supabase
+          .from("payments")
+          .select("blockchain_tx_id")
+          .eq("order_id", orderId)
+          .single();
+        const arrExist = existing?.blockchain_tx_id || [];
+        const arr = Array.isArray(arrExist) ? arrExist : [arrExist];
         await supabase
           .from("payments")
-          .update({ blockchain_tx_id: confTx })
+          .update({ blockchain_tx_id: [...arr, confTx] })
           .eq("order_id", orderId);
       }
     } finally {
@@ -476,9 +511,16 @@ const confirmQualityAndPickup = async (req, res) => {
         );
         console.log("RefundPayment tx", refundTx);
         if (refundTx) {
+          const { data: existing } = await supabase
+            .from("payments")
+            .select("blockchain_tx_id")
+            .eq("order_id", orderId)
+            .single();
+          const arrExist = existing?.blockchain_tx_id || [];
+          const arr = Array.isArray(arrExist) ? arrExist : [arrExist];
           await supabase
             .from("payments")
-            .update({ blockchain_tx_id: refundTx })
+            .update({ blockchain_tx_id: [...arr, refundTx] })
             .eq("order_id", orderId);
         }
         await close();

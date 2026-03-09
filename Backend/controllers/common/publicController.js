@@ -192,15 +192,7 @@ async function buildDto(batchId) {
         ? stock.image_hash.length
         : (stock.image_hash ? 1 : 0),
       blockchainTxId: history[0]?.txId || null,
-    },
-
-    journey: {
-      createdAt: order?.farmer_accepted_at || order?.created_at || stockCreatedAt || null,
-      farmerAcceptedAt: order?.farmer_accepted_at || null,
-      pickedUpAt,
-      deliveredAt,
-      farmToShelfHours,
-      transitHours,
+      blockchainTxIds: transactionIds, // full ledger tx history for this batch
       pickupDelayHours,
       freshnessRating: freshnessRating(farmToShelfHours),
     },

@@ -235,11 +235,18 @@ const acceptProposal = async (req, res) => {
       blockchainStatus = "Success";
       console.log(`[Blockchain] RegisterAcceptedDeal Success: PROPOSAL_${proposalId} tx=${txId}`);
       if (txId) {
-        // persist to match_proposals row
+        // persist to match_proposals row (append to array)
         try {
+          const { data: existing } = await supabase
+            .from("match_proposals")
+            .select("blockchain_tx_id")
+            .eq("id", proposalId)
+            .single();
+          const arrExisting = existing?.blockchain_tx_id || [];
+          const arr = Array.isArray(arrExisting) ? arrExisting : [arrExisting];
           await supabase
             .from("match_proposals")
-            .update({ blockchain_tx_id: txId })
+            .update({ blockchain_tx_id: [...arr, txId] })
             .eq("id", proposalId);
         } catch (_e) {
           console.warn(

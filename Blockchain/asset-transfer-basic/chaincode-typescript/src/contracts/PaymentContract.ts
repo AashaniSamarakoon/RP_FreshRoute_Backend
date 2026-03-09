@@ -28,7 +28,7 @@ export class PaymentContract extends BaseContract {
      * Called from backend when buyer submits payment form.
      */
     @Transaction()
-    async InitiatePayment(ctx: Context, orderId: string, amount: string, paymentMethod: string): Promise<void> {
+    async InitiatePayment(ctx: Context, orderId: string, amount: string, paymentMethod: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'buyer') throw new Error('Only buyers can initiate payments');
 
@@ -64,6 +64,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     /**
@@ -71,7 +72,7 @@ export class PaymentContract extends BaseContract {
      * Called from backend notify webhook for PAY_NOW orders.
      */
     @Transaction()
-    async AuthorizePayment(ctx: Context, orderId: string, payherePaymentId: string): Promise<void> {
+    async AuthorizePayment(ctx: Context, orderId: string, payherePaymentId: string): Promise<{ txId: string }> {
         const paymentData = await ctx.stub.getState(`PAYMENT_${orderId}`);
         if (!paymentData || paymentData.length === 0) throw new Error(`Payment for order ${orderId} not found`);
         const payment = JSON.parse(paymentData.toString());
@@ -95,6 +96,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -106,7 +108,7 @@ export class PaymentContract extends BaseContract {
      * charge date on the immutable ledger. Called from preapprovalInit backend endpoint.
      */
     @Transaction()
-    async RecordPreapproval(ctx: Context, orderId: string, amount: string, autoChargeDate: string): Promise<void> {
+    async RecordPreapproval(ctx: Context, orderId: string, amount: string, autoChargeDate: string): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'buyer') throw new Error('Only buyers can initiate pre-approvals');
 
@@ -143,6 +145,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     /**
@@ -152,7 +155,7 @@ export class PaymentContract extends BaseContract {
      * Called from preapprovalNotify backend endpoint.
      */
     @Transaction()
-    async RecordPreapprovalToken(ctx: Context, orderId: string, payherePaymentId: string): Promise<void> {
+    async RecordPreapprovalToken(ctx: Context, orderId: string, payherePaymentId: string): Promise<{ txId: string }> {
         const paymentData = await ctx.stub.getState(`PAYMENT_${orderId}`);
         if (!paymentData || paymentData.length === 0) throw new Error(`Payment for order ${orderId} not found`);
         const payment = JSON.parse(paymentData.toString());
@@ -178,6 +181,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     /**
@@ -186,7 +190,7 @@ export class PaymentContract extends BaseContract {
      * Called from payhereChargeService.runDailyAutoCharge.
      */
     @Transaction()
-    async RecordAutoCharge(ctx: Context, orderId: string, chargeId: string, chargedAmount: string): Promise<void> {
+    async RecordAutoCharge(ctx: Context, orderId: string, chargeId: string, chargedAmount: string): Promise<{ txId: string }> {
         const paymentData = await ctx.stub.getState(`PAYMENT_${orderId}`);
         if (!paymentData || paymentData.length === 0) throw new Error(`Payment for order ${orderId} not found`);
         const payment = JSON.parse(paymentData.toString());
@@ -214,6 +218,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -233,7 +238,7 @@ export class PaymentContract extends BaseContract {
         farmerShareAmount: string,      // farmer's base price at acceptance
         transporterFeeAmount: string,   // delivery fee at acceptance
         platformFeeAmount: string       // service charge at acceptance
-    ): Promise<void> {
+    ): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'transporter') throw new Error('Only transporters can release payments after quality check');
 
@@ -269,6 +274,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     /**
@@ -276,7 +282,7 @@ export class PaymentContract extends BaseContract {
      * Called from backend after successful PayHere capture call.
      */
     @Transaction()
-    async ConfirmPaymentRelease(ctx: Context, orderId: string, captureId: string): Promise<void> {
+    async ConfirmPaymentRelease(ctx: Context, orderId: string, captureId: string): Promise<{ txId: string }> {
         const paymentData = await ctx.stub.getState(`PAYMENT_${orderId}`);
         if (!paymentData || paymentData.length === 0) throw new Error(`Payment for order ${orderId} not found`);
         const payment = JSON.parse(paymentData.toString());
@@ -300,6 +306,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     /**
@@ -307,7 +314,7 @@ export class PaymentContract extends BaseContract {
      * by the PayHere API in the backend; this records the intent on the ledger.
      */
     @Transaction()
-    async RefundPayment(ctx: Context, orderId: string, reason: string): Promise<void> {
+    async RefundPayment(ctx: Context, orderId: string, reason: string): Promise<{ txId: string }> {
         const paymentData = await ctx.stub.getState(`PAYMENT_${orderId}`);
         if (!paymentData || paymentData.length === 0) throw new Error(`Payment for order ${orderId} not found`);
         const payment = JSON.parse(paymentData.toString());
@@ -334,13 +341,14 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     /**
      * ConfirmRefund — PayHere void/refund API succeeded.
      */
     @Transaction()
-    async ConfirmRefund(ctx: Context, orderId: string, refundId: string): Promise<void> {
+    async ConfirmRefund(ctx: Context, orderId: string, refundId: string): Promise<{ txId: string }> {
         const paymentData = await ctx.stub.getState(`PAYMENT_${orderId}`);
         if (!paymentData || paymentData.length === 0) throw new Error(`Payment for order ${orderId} not found`);
         const payment = JSON.parse(paymentData.toString());
@@ -364,6 +372,7 @@ export class PaymentContract extends BaseContract {
 
         await ctx.stub.putState(`PAYMENT_${orderId}`, Buffer.from(JSON.stringify(payment)));
         await ctx.stub.putState(orderId, Buffer.from(JSON.stringify(order)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     // ─────────────────────────────────────────────────────────────

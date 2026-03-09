@@ -17,10 +17,29 @@ async function submitWithTx(contract, fn, ...args) {
     console.warn("typeof submitTransaction ->", typeof contract.submitTransaction);
     const result = await contract.submitTransaction(fn, ...args);
     console.log("[blockchainUtils] fallback submitTransaction returned:", result);
-    // sometimes the return buffer may include txId metadata
-    if (result && result.txId) {
-      console.log("[blockchainUtils] extracted txId from result", result.txId);
-      return result.txId;
+    // try to parse the returned buffer/bytes in case contract itself included txId
+    if (result) {
+      try {
+        // result may be Buffer, Uint8Array, or string
+        let text;
+        if (typeof result === "string") {
+          text = result;
+        } else if (result instanceof Uint8Array) {
+          // convert the bytes to string
+          text = Buffer.from(result).toString();
+        } else if (result.toString) {
+          text = result.toString();
+        }
+        if (text) {
+          const json = JSON.parse(text);
+          if (json && json.txId) {
+            console.log("[blockchainUtils] extracted txId from result", json.txId);
+            return json.txId;
+          }
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
     }
     return null;
   }

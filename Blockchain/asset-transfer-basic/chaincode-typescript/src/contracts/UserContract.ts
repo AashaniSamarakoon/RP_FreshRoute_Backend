@@ -5,12 +5,12 @@ import { BaseContract } from './BaseContract';
 export class UserContract extends BaseContract {
 
     @Transaction()
-    async RegisterUser(ctx: Context, id: string, name: string, type: 'farmer' | 'buyer' | 'transporter'): Promise<void> {
+    async RegisterUser(ctx: Context, id: string, name: string, type: 'farmer' | 'buyer' | 'transporter'): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
-        
+
         // Security: Ensure the MSP matches the requested role
         // (e.g., Org1 can only register farmers)
-        
+
         const user = {
             id,
             docType: 'user',
@@ -22,6 +22,7 @@ export class UserContract extends BaseContract {
         };
 
         await ctx.stub.putState(id, Buffer.from(JSON.stringify(user)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction(false)
