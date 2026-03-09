@@ -40,44 +40,41 @@ const signup = async (req, res) => {
 
     if (authError) return res.status(409).json({ message: authError.message });
 
+    // Supabase silently returns an existing user on duplicate email instead of erroring.
+    // Detect this: if identities array is empty the email is already registered.
+    if (!authData?.user?.identities?.length) {
+      return res.status(409).json({ message: "An account with this email already exists." });
+    }
+
     const user = authData.user;
     let ledgerStatus = "Pending";
     let identitySuccess = false;
     const fullName = `${first_name} ${last_name}`;
 
-    // Create role-specific profile row using admin client to bypass RLS
+    // Create role-specific profile row using admin client to bypass RLS.
+    // Use upsert (onConflict: user_id) so that if a Supabase trigger already
+    // created the row before this code runs we don't crash with a duplicate PK.
     let roleProfile = null;
     try {
-      if (normalizedRole === "BUYER") {
-        const { data, error } = await supabaseAdmin
-          .from("buyers")
-          .insert({ user_id: user.id })
-          .select()
-          .single();
-        if (error) throw error;
-        roleProfile = data;
-      } else if (normalizedRole === "FARMER") {
-        const { data, error } = await supabaseAdmin
-          .from("farmers")
-          .insert({ user_id: user.id })
-          .select()
-          .single();
-        if (error) throw error;
-        roleProfile = data;
-      } else if (normalizedRole === "TRANSPORTER") {
-        const { data, error } = await supabaseAdmin
-          .from("transporters")
-          .insert({ user_id: user.id })
-          .select()
-          .single();
-        if (error) throw error;
-        roleProfile = data;
-      }
+      const table =
+        normalizedRole === "BUYER"
+          ? "buyers"
+          : normalizedRole === "FARMER"
+          ? "farmers"
+          : "transporters";
+
+      const { data, error } = await supabaseAdmin
+        .from(table)
+        .upsert({ user_id: user.id }, { onConflict: "user_id", ignoreDuplicates: false })
+        .select()
+        .single();
+      if (error) throw error;
+      roleProfile = data;
     } catch (profileErr) {
       console.error("Failed to create role profile:", profileErr);
-      return res.status(500).json({ 
+      return res.status(500).json({
         message: "Failed to create user profile. Please contact support.",
-        error: profileErr.message 
+        error: profileErr.message,
       });
     }
 
@@ -144,7 +141,9 @@ const signup = async (req, res) => {
 // Login
 const login = async (req, res) => {
   try {
-    const { identifier, password } = req.body; // 'identifier' can be Email, Phone, or NIC
+    // Accept either 'identifier' (email, phone, or NIC) or 'email' for frontend compatibility
+    const identifier = req.body.identifier ?? req.body.email;
+    const { password } = req.body;
 
     if (!identifier || !password) {
       return res.status(400).json({ message: "Missing fields" });

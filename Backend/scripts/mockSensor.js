@@ -57,7 +57,7 @@ const axios = require("axios");
 
 // CONFIGURATION
 const BACKEND_URL = "http://localhost:4000";
-const VEHICLE_ID = "597ccc12-17d0-4a5e-ae5d-19f64be08b6b"; // Copy from your DB
+const VEHICLE_ID = "879da66f-2db6-49e4-956d-482f8ae2a0a4"; // Copy from your DB
 
 // SETTINGS
 let currentTemp = 40.0;
@@ -65,7 +65,7 @@ let currentHumidity = 65.0;
 
 // INTERVAL: 5 Minutes = 300000 ms
 // For testing, you might want 5000 (5 seconds)
-const SEND_INTERVAL = 300000;
+const SEND_INTERVAL = 20000;
 
 function simulateSensor() {
   // 1. Simulate Temp Fluctuation (Drift)
@@ -89,7 +89,7 @@ function simulateSensor() {
   };
 
   console.log(
-    `[SENSOR] Sending Telemetry: ${payload.temp}°C | ${payload.humidity}%`
+    `[SENSOR] Sending Telemetry: ${payload.temp}°C | ${payload.humidity}%`,
   );
 
   axios

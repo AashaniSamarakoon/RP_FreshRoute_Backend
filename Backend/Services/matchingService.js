@@ -1,4 +1,4 @@
-const { supabase } = require("../utils/supabaseClient");
+const { supabase, supabaseAdmin } = require("../utils/supabaseClient");
 
 // ─── Configurable Weights ─────────────────────────────────────────────────────
 const W_LOC = 0.35; // Distance from farmer → buyer delivery location (35%)
@@ -73,16 +73,19 @@ const releaseExpiredStockReservations = async () => {
   }
 };
 
-const reserveStock = async (stockId, orderId, expiresAt) => {
+const reserveStock = async (stockId, orderId, expiresAt, qty) => {
   try {
+    const reservePayload = {
+      status: "RESERVED",
+      reserved_until: expiresAt,
+      reserved_for_order: orderId,
+      updated_at: new Date().toISOString(),
+    };
+    // Bug 1: lock only the quantity we intend to use so the remainder can be split off
+    if (qty !== undefined) reservePayload.quantity = qty;
     const { data, error } = await supabase
       .from("estimated_stock")
-      .update({
-        status: "RESERVED",
-        reserved_until: expiresAt,
-        reserved_for_order: orderId,
-        updated_at: new Date().toISOString(),
-      })
+      .update(reservePayload)
       .eq("id", stockId)
       .eq("status", "OPEN")
       .select()
@@ -185,7 +188,7 @@ const createMatchProposal = async ({
   distanceKm,
 }) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("match_proposals")
       .insert({
         order_id: orderId,
@@ -416,6 +419,9 @@ const runMatchingAlgorithm = async (orderId) => {
         grade,
         estimated_harvest_date,
         status,
+        price_per_kg,
+        image_url,
+        image_hash,
         farmer:farmers!farmer_id (
           user_id,
           reputation,
@@ -448,6 +454,9 @@ const runMatchingAlgorithm = async (orderId) => {
         available_qty: item.quantity,
         grade: item.grade,
         estimated_harvest_date: item.estimated_harvest_date,
+        price_per_kg: item.price_per_kg ?? null,
+        image_url: item.image_url ?? null,
+        image_hash: item.image_hash ?? null,
         reputation: item.farmer.reputation ?? 2.5,
         lat: item.farmer.latitude,
         lon: item.farmer.longitude,
@@ -549,12 +558,42 @@ const runMatchingAlgorithm = async (orderId) => {
         candidate.stock_id,
         order.id,
         reservationExpiry,
+        takeQty,
       );
       if (!reserved) {
         console.log(
           `[Matching] Stock ${candidate.stock_id} already reserved, skipping.`,
         );
         continue;
+      }
+
+      // Bug 1 fix: if only part of this stock row was needed, split the remainder
+      // into a new OPEN row so other orders can still access the unused portion.
+      if (takeQty < candidate.available_qty) {
+        const remainderQty = candidate.available_qty - takeQty;
+        const { error: splitError } = await supabaseAdmin
+          .from("estimated_stock")
+          .insert({
+            farmer_id: candidate.farmer_id,
+            fruit_type: order.fruit_type,
+            variant: order.variant,
+            grade: candidate.grade,
+            quantity: remainderQty,
+            price_per_kg: candidate.price_per_kg,
+            estimated_harvest_date: candidate.estimated_harvest_date,
+            image_url: candidate.image_url,
+            image_hash: candidate.image_hash,
+            status: "OPEN",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        if (splitError) {
+          console.error(`[Matching] Failed to split remainder stock:`, splitError);
+        } else {
+          console.log(
+            `[Matching] Split stock ${candidate.stock_id}: reserved ${takeQty}kg, returned ${remainderQty}kg to OPEN pool`,
+          );
+        }
       }
 
       const proposal = await createMatchProposal({
@@ -614,6 +653,75 @@ const runMatchingAlgorithm = async (orderId) => {
   }
 };
 
+// ─── Payment Timeout Recovery (Bug 4) ───────────────────────────────────────
+
+// Releases stock locked as MATCHED back to OPEN if buyer never pays within 48h.
+// Called nightly by the expiry cron in index.js.
+const releaseMatchedStockForExpiredPayments = async () => {
+  try {
+    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+
+    // Orders that have been stuck on AWAITING_PAYMENT for more than 48 hours
+    const { data: staleOrders, error: fetchError } = await supabaseAdmin
+      .from("placed_orders")
+      .select("id, harvest_id")
+      .eq("status", "AWAITING_PAYMENT")
+      .lt("updated_at", cutoff);
+
+    if (fetchError) {
+      console.error("[Stock] Failed to fetch stale AWAITING_PAYMENT orders:", fetchError);
+      return 0;
+    }
+    if (!staleOrders?.length) return 0;
+
+    let count = 0;
+    for (const order of staleOrders) {
+      // Release the committed stock back to OPEN
+      if (order.harvest_id) {
+        await supabaseAdmin
+          .from("estimated_stock")
+          .update({
+            status: "OPEN",
+            reserved_until: null,
+            reserved_for_order: null,
+            updated_at: now,
+          })
+          .eq("id", order.harvest_id)
+          .in("status", ["MATCHED", "RESERVED"]);
+      }
+
+      // Cancel the ACCEPTED proposal
+      await supabaseAdmin
+        .from("match_proposals")
+        .update({ status: "CANCELLED", updated_at: now })
+        .eq("order_id", order.id)
+        .eq("status", "ACCEPTED");
+
+      // Reset the order to OPEN so matching can run again
+      await supabaseAdmin
+        .from("placed_orders")
+        .update({
+          status: "OPEN",
+          selected_farmer_id: null,
+          harvest_id: null,
+          total_amount: null,
+          updated_at: now,
+        })
+        .eq("id", order.id);
+
+      count++;
+    }
+
+    if (count > 0)
+      console.log(`[Stock] Released ${count} MATCHED stocks due to payment timeout (48h)`);
+    return count;
+  } catch (err) {
+    console.error("[Stock] Error releasing payment-expired stock:", err);
+    return 0;
+  }
+};
+
 // ─── Batch & Event Triggers ───────────────────────────────────────────────────
 
 const runBatchMatching = async () => {
@@ -643,7 +751,7 @@ const runBatchMatching = async () => {
         await supabase
           .from("placed_orders")
           .update({
-            status: "PENDING_FARMER",
+            status: "PENDING_BUYER",
             updated_at: new Date().toISOString(),
           })
           .eq("id", order.id);
@@ -707,7 +815,7 @@ const onNewStockAdded = async (stockId) => {
         await supabase
           .from("placed_orders")
           .update({
-            status: "PENDING_FARMER",
+            status: "PENDING_BUYER",
             updated_at: new Date().toISOString(),
           })
           .eq("id", order.id);
@@ -756,6 +864,7 @@ module.exports = {
   runBatchMatching,
   onNewStockAdded,
   markExpiredOrders,
+  releaseMatchedStockForExpiredPayments,
   releaseExpiredStockReservations,
   releaseOrderReservations,
   confirmStockMatch,
