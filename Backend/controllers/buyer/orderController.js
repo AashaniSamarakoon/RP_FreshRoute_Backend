@@ -1,32 +1,8 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { runMatchingAlgorithm } = require("../../Services/matchingService");
 const { calculateDistanceKm } = require("../../utils/logisticsUtils");
-
-// utilities
-async function fetchUnitPrice(fruit, variant, grade, date) {
-  const { data, error } = await supabase
-    .from("freshroute_prices")
-    .select("price")
-    .eq("fruit_name", fruit)
-    .eq("variety", variant)
-    .eq("grade", grade)
-    .eq("target_date", date)
-    .limit(1)
-    .single();
-  if (error && error.code !== "PGRST116") throw error;
-  return data ? data.price : null;
-}
-
-function calculatePrice(order, unitPrice) {
-  const basePrice = unitPrice != null ? unitPrice * order.quantity : null;
-  const serviceCharge = basePrice != null ? basePrice * 0.01 : null;
-  const distanceKm = order.distance_km || 0;
-  const deliveryFee = distanceKm * 35;
-  const totalPrice =
-    basePrice != null ? basePrice + (serviceCharge || 0) + deliveryFee : null;
-  return { unitPrice, basePrice, serviceCharge, deliveryFee, totalPrice };
-}
+const { fetchUnitPrice, calculatePrice } = require("../../utils/pricingUtils");
 
 // STEP 1: Buyer Posts a Request (Supabase Only)
 const placeOrder = async (req, res) => {
@@ -55,7 +31,6 @@ const placeOrder = async (req, res) => {
       delivery_location,
       latitude,
       longitude,
-      target_price,
     } = req.body;
 
     // 2. Validate
@@ -78,7 +53,6 @@ const placeOrder = async (req, res) => {
           delivery_location,
           latitude,
           longitude,
-          target_price: target_price || null, // Save if provided
           status: "OPEN", // Initial status
         },
       ])
@@ -113,7 +87,7 @@ const placeOrder = async (req, res) => {
     // 5. Update status if matches found
     let finalStatus = "OPEN";
     if (matches && matches.length > 0) {
-      finalStatus = "PENDING_ACCEPTANCE";
+      finalStatus = "PENDING_BUYER";
       await supabase
         .from("placed_orders")
         .update({ status: finalStatus, updated_at: new Date().toISOString() })
@@ -317,24 +291,10 @@ const getOrderDetails = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // Add dummy farmer_accepted_at if order is matched/accepted
-    if (
-      orderData &&
-      !orderData.farmer_accepted_at &&
-      (orderData.status === "MATCHED" ||
-        orderData.status === "PENDING_BUYER" ||
-        orderData.status === "PENDING_FARMER" ||
-        orderData.status === "AWAITING_PAYMENT" ||
-        orderData.status === "PAID_PENDING_DELIVERY" ||
-        orderData.status === "IN_TRANSIT" ||
-        orderData.status === "DELIVERED" ||
-        orderData.status === "COMPLETED")
-    ) {
-      // Add 1-2 hours to created_at for dummy accepted time
-      const createdTime = new Date(orderData.created_at).getTime();
-      const acceptedTime = new Date(createdTime + 1.5 * 60 * 60 * 1000); // 1.5 hours later
-      orderData.farmer_accepted_at = acceptedTime.toISOString();
-    }
+    // farmer_accepted_at is now explicitly set when a farmer accepts a proposal
+    // (see farmer/proposalController), so there is no need to fabricate a value here.
+    // Previous versions injected a dummy timestamp for older rows; if you still
+    // encounter nulls they can be backfilled with a migration or left null.
 
     let productImages = [];
     let harvestDate = null;
@@ -405,47 +365,53 @@ const getOrderDetails = async (req, res) => {
     // Note: orderData.total_amount is the price locked at farmer acceptance time (stored in DB)
     // unitPrice/basePrice/serviceCharge/deliveryFee/totalPrice above are today's live market prices
 
-    // Fetch product images from estimated_stock if harvest_id exists
+    // Fetch product images — try harvest_id first, then best ACCEPTED/PENDING proposal as fallback
     if (orderData.harvest_id) {
       const { data: stockData } = await supabase
         .from("estimated_stock")
-        .select("image_url, harvest_date, estimated_harvest_date")
+        .select("image_url, estimated_harvest_date")
         .eq("id", orderData.harvest_id)
         .single();
 
       if (stockData) {
-        // Handle images
         if (stockData.image_url) {
           const images = Array.isArray(stockData.image_url)
             ? stockData.image_url
             : [stockData.image_url];
-          productImages = images.filter((url) => url);
+          productImages = images.filter(Boolean);
         }
-
-        // Handle harvest date - use harvest_date if available, otherwise estimated_harvest_date
-        harvestDate =
-          stockData.harvest_date || stockData.estimated_harvest_date;
-        if (!harvestDate) {
-          // Add dummy harvest date for testing (3 days before order created)
-          const createdTime = new Date(orderData.created_at).getTime();
-          const dummyHarvestDate = new Date(
-            createdTime - 3 * 24 * 60 * 60 * 1000,
-          );
-          harvestDate = dummyHarvestDate.toISOString().split("T")[0]; // yyyy-mm-dd format
-        }
-      } else {
-        // If stockData is null, still set dummy harvest date
-        const createdTime = new Date(orderData.created_at).getTime();
-        const dummyHarvestDate = new Date(
-          createdTime - 3 * 24 * 60 * 60 * 1000,
-        );
-        harvestDate = dummyHarvestDate.toISOString().split("T")[0]; // yyyy-mm-dd format
+        harvestDate = stockData.estimated_harvest_date || null;
       }
-    } else {
-      // If no harvest_id, add dummy harvest date
-      const createdTime = new Date(orderData.created_at).getTime();
-      const dummyHarvestDate = new Date(createdTime - 3 * 24 * 60 * 60 * 1000);
-      harvestDate = dummyHarvestDate.toISOString().split("T")[0]; // yyyy-mm-dd format
+    }
+
+    // Fallback: if no images yet, look them up via the matched/pending proposal → stock
+    if (productImages.length === 0) {
+      const { data: proposalStock } = await supabase
+        .from("match_proposals")
+        .select("stock:estimated_stock!stock_id(image_url, estimated_harvest_date)")
+        .eq("order_id", orderId)
+        .in("status", ["ACCEPTED", "PENDING_FARMER", "PENDING_BUYER"])
+        .order("match_score", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (proposalStock?.stock) {
+        const raw = proposalStock.stock.image_url;
+        if (raw) {
+          const images = Array.isArray(raw) ? raw : [raw];
+          productImages = images.filter(Boolean);
+        }
+        if (!harvestDate) {
+          harvestDate = proposalStock.stock.estimated_harvest_date || null;
+        }
+      }
+    }
+
+    // Final fallback for harvestDate: derive from created_at
+    if (!harvestDate) {
+      harvestDate = new Date(new Date(orderData.created_at).getTime() - 3 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0];
     }
 
     let farmer = null;

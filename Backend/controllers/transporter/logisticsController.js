@@ -1,6 +1,6 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const {
-  calculateDistanceKm,
+  getDrivingDistanceKm,
   getMockWeather,
   SRI_LANKA_CITIES,
 } = require("../../utils/logisticsUtils");
@@ -72,10 +72,14 @@ exports.assignVehicleToOrder = async (req, res) => {
 
     // 2.2 Calculate Distance
     let distance = 0;
+    let durationMins = 0;
     if (pLat && dLat) {
-      distance = calculateDistanceKm(pLat, pLng, dLat, dLng);
+      const routingData = await getDrivingDistanceKm(pLat, pLng, dLat, dLng);
+      distance = routingData.distanceKm;
+      durationMins = routingData.durationMins;
+      
       print(`[MAPS] Route: ${order.pickup_location} -> ${order.drop_location}`);
-      print(`[MAPS] Calculated Distance: ${distance} km`);
+      print(`[MAPS] OSRM Driving Distance: ${distance} km (Est: ${durationMins} mins)`);
     } else {
       print(`[WARN] Coordinates missing. Assuming safe distance.`);
       distance = 50; // Default safety

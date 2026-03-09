@@ -14,7 +14,7 @@ CHECK (status = ANY (ARRAY[
     'PENDING_BUYER'::text,     -- Proposals created, buyer needs to select
     'PENDING_FARMER'::text,    -- Buyer approved, farmer needs to accept
     'AWAITING_PAYMENT'::text,  -- Farmer accepted, buyer needs to upload payment slip
-    'PAID_PENDING_DELIVERY'::text, -- Payment verified, awaiting pickup
+    'AUTHORIZED_PAYMENT'::text, -- Payment authorised, awaiting pickup
     'IN_TRANSIT'::text,        -- Picked up, payment RELEASED to farmer, goods in transit
     'DELIVERED'::text,         -- Delivered to buyer
     'COMPLETED'::text,         -- Final state, all done

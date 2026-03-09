@@ -14,6 +14,7 @@ const {
 const {
   runBatchMatching,
   markExpiredOrders,
+  releaseMatchedStockForExpiredPayments,
 } = require("./Services/matchingService");
 const {
   startSMSScheduler,
@@ -57,6 +58,7 @@ const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
 
 const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
+const publicRoutes = require("./routes/common/publicRoutes");
 const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
 const paymentRoutes = require("./routes/buyer/paymentRoutes");
 const complaintRoutes = require("./routes/buyer/complaintRoutes");
@@ -90,6 +92,11 @@ app.use((req, res, next) => {
   };
 
   next();
+});
+
+// Root endpoint
+app.get("/", (req, res) => {
+  res.send("FreshRoute API is running securely via Cloudflare!");
 });
 
 // Health check endpoint
@@ -182,6 +189,9 @@ app.use("/api/prices/freshroute", authMiddleware, freshRoutePricesRouter);
 // shared forecast endpoint (allows any authenticated user) mounted at fixed path
 app.use("/api/forecast", authMiddleware, forecastRouter);
 
+// Public Transparency Portal — no auth middleware, rate-limited at route level
+app.use("/api/public", publicRoutes);
+
 // Auth routes
 app.use("/api/auth", authRoutes);
 app.use("/api/trust", trustRoutes);
@@ -221,8 +231,9 @@ app.use("/api/admin/temps", adminTempsRoutes);
 // PayHere IPN notification endpoint (no auth — called by PayHere server)
 app.use("/api/payhere", payhereRoutes);
 
-// PayHere preapproval HTML form page — no /api prefix (redirect target for mobile)
-app.use("/payhere", payhereRoutes);
+// Note: the old public form redirect path has been retired; payments now
+// originate via the mobile SDK, so there's no need to mount the router at
+// "/payhere" without the /api prefix.
 
 // Transporter delivery routes (quality check, pickup, delivery confirmation)
 app.use("/api/transporter/delivery", deliveryRoutes);
@@ -292,6 +303,15 @@ app.use(
   telemetryRoutes,
 );
 
+// Error handler for JSON parsing issues (must be after all routes)
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.warn("⚠️ Invalid JSON in body (e.g., 'null' string from frontend)");
+    return res.status(400).json({ error: "Invalid JSON in request body" });
+  }
+  next(err);
+});
+
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
 
@@ -356,15 +376,16 @@ startServer();
 
 // ---------- SCHEDULED JOBS ----------
 // Run batch matching every 2 hours (at minute 0)
-cron.schedule("0 */2 * * *", async () => {
-  console.log("[Cron] Running scheduled batch matching...");
+cron.schedule("*/30 * * * *", async () => {  console.log("[Cron] Running scheduled batch matching...");
   await runBatchMatching();
 });
 
-// Mark expired orders daily at midnight
+// Mark expired orders and release stale MATCHED stock daily at midnight
 cron.schedule("0 0 * * *", async () => {
   console.log("[Cron] Checking for expired orders...");
   await markExpiredOrders();
+  // Bug 4 fix: release stock locked as MATCHED when buyer never pays within 48h
+  await releaseMatchedStockForExpiredPayments();
 });
 
 console.log(

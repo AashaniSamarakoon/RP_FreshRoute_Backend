@@ -1,30 +1,37 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { calculateDistanceKm } = require("../../utils/logisticsUtils");
+const { fetchUnitPrice, calculatePrice, calculateFarmerPrice } = require("../../utils/pricingUtils");
+const { getContract } = require("../../Services/blockchain/contractService");
+const { sendSystemNotification } = require("../../Services/notificationsService");
 
-// ─── Shared pricing helpers (mirrors orderController) ────────────────────────
+// ─── Farmer-side proposal pricing ────────────────────────────────────────────
+// Uses farmer-specific breakdown: no delivery fee, 1.4% platform deduction.
+async function attachFarmerPricing(proposals) {
+  const today = new Date().toISOString().split("T")[0];
+  return Promise.all(
+    (proposals || []).map(async (p) => {
+      // Prefer the price the farmer actually set; fall back to market price.
+      let unitPrice = p.stock?.price_per_kg > 0 ? p.stock.price_per_kg : null;
+      let priceSource = unitPrice != null ? "farmer" : null;
 
-async function fetchUnitPrice(fruit, variant, grade, date) {
-  const { data, error } = await supabase
-    .from("freshroute_prices")
-    .select("price")
-    .eq("fruit_name", fruit)
-    .eq("variety", variant)
-    .eq("grade", grade)
-    .eq("target_date", date)
-    .limit(1)
-    .single();
-  if (error && error.code !== "PGRST116") throw error;
-  return data ? data.price : null;
-}
+      if (unitPrice == null) {
+        const fruit   = p.order?.fruit_type;
+        const variant = p.order?.variant;
+        const grade   = p.order?.grade;
+        if (fruit && variant && grade) {
+          unitPrice   = await fetchUnitPrice(fruit, variant, grade, today);
+          priceSource = unitPrice != null ? "market" : null;
+        }
+      }
 
-function calculatePrice(order, unitPrice) {
-  const basePrice = unitPrice != null ? unitPrice * order.quantity : null;
-  const serviceCharge = basePrice != null ? basePrice * 0.01 : null;
-  const distanceKm = order.distance_km || 0;
-  const deliveryFee = distanceKm * 35;
-  const totalPrice =
-    basePrice != null ? basePrice + (serviceCharge || 0) + deliveryFee : null;
-  return { unitPrice, basePrice, serviceCharge, deliveryFee, totalPrice };
+      const breakdown = calculateFarmerPrice(
+        { quantity: p.quantity_proposed ?? 0 },
+        unitPrice,
+      );
+
+      return { ...p, pricing: { ...breakdown, priceSource } };
+    }),
+  );
 }
 
 // Helper: Get farmer ID from user ID
@@ -77,6 +84,14 @@ const getProposals = async (req, res) => {
         status,
         expires_at,
         created_at,
+        stock:estimated_stock!stock_id (
+          id,
+          quantity,
+          price_per_kg,
+          fruit_type,
+          variant,
+          image_url
+        ),
         order:placed_orders!order_id (
           fruit_type,
           variant,
@@ -86,6 +101,7 @@ const getProposals = async (req, res) => {
           delivery_location,
           buyer:buyers!buyer_id (
             user_id,
+            company_name,
             user:users!user_id (
               first_name,
               last_name,
@@ -102,9 +118,11 @@ const getProposals = async (req, res) => {
 
     if (error) throw new Error(error.message);
 
+    const enriched = await attachFarmerPricing(proposals);
+
     return res.status(200).json({
-      message: `Found ${proposals.length} pending proposals`,
-      proposals: proposals,
+      message: `Found ${enriched.length} pending proposals`,
+      proposals: enriched,
     });
   } catch (err) {
     console.error("GetProposals Error:", err);
@@ -161,26 +179,7 @@ const acceptProposal = async (req, res) => {
       return res.status(400).json({ message: "Insufficient stock available" });
     }
 
-    // 3. Blockchain — skipped until AcceptProposal is implemented in OrderContract chaincode
-    const blockchainStatus = "Skipped";
-
-    // 4. Update proposal status
-    await supabase
-      .from("match_proposals")
-      .update({
-        status: "ACCEPTED",
-        farmer_response_at: new Date().toISOString(),
-      })
-      .eq("id", proposalId);
-
-    // 5. Deduct stock quantity
-    await supabase
-      .from("estimated_stock")
-      .update({ quantity: stock.quantity - proposal.quantity_proposed })
-      .eq("id", proposal.stock_id);
-
-    // Calculate total amount using buyer pricing logic
-    // first fetch the order to get location and other fields
+    // 3. Compute pricing (needed for both blockchain and DB update)
     const { data: orderRow } = await supabase
       .from("placed_orders")
       .select("*")
@@ -188,7 +187,6 @@ const acceptProposal = async (req, res) => {
       .single();
     let distance = 0;
     if (orderRow) {
-      // compute distance between farmer and delivery point
       const { data: farmerInfo } = await supabase
         .from("farmers")
         .select("latitude, longitude")
@@ -219,31 +217,89 @@ const acceptProposal = async (req, res) => {
     );
     const totalAmount = breakdown.totalPrice;
 
-    // 6. Update order status to AWAITING_PAYMENT
+    // 4. Record accepted deal on-chain (farmer identity signs the immutable contract record)
+    let blockchainStatus = "Skipped";
+    try {
+      const unitForChain = unit != null ? unit.toString() : "0";
+      const { contract, close } = await getContract(userId, "OrderContract");
+      await contract.submitTransaction(
+        "RegisterAcceptedDeal",
+        `PROPOSAL_${proposalId}`,
+        `ORDER_${proposal.order_id}`,
+        `HARVEST_${proposal.stock_id}`,
+        proposal.quantity_proposed.toString(),
+        unitForChain,
+      );
+      await close();
+      blockchainStatus = "Success";
+      console.log(`[Blockchain] RegisterAcceptedDeal Success: PROPOSAL_${proposalId}`);
+    } catch (bcErr) {
+      console.error("[Blockchain] RegisterAcceptedDeal failed:", bcErr.message);
+      blockchainStatus = "Failed";
+    }
+
+    // 5. Update proposal status (triggers will handle order/stock status updates)
+    await supabase
+      .from("match_proposals")
+      .update({
+        status: "ACCEPTED",
+        farmer_response_at: new Date().toISOString(),
+      })
+      .eq("id", proposalId);
+
+    // also stamp the order row so we know when farmer accepted
+    await supabase
+      .from("placed_orders")
+      .update({ farmer_accepted_at: new Date().toISOString() })
+      .eq("id", proposal.order_id);
+
+    // Note: Stock status update to MATCHED and order status to AWAITING_PAYMENT
+    // are now handled automatically by database triggers
+
+    // Update order with pricing details (status update handled by trigger)
     await supabase
       .from("placed_orders")
       .update({
-        status: "AWAITING_PAYMENT",
-        selected_farmer_id: farmerId,
-        harvest_id: proposal.stock_id,
         total_amount: totalAmount,
+        farmer_share_amount:    breakdown.basePrice,
+        transporter_fee_amount: breakdown.deliveryFee,
+        platform_fee_amount:    breakdown.serviceCharge,
         blockchain_status: blockchainStatus,
         updated_at: new Date().toISOString(),
       })
       .eq("id", proposal.order_id);
 
-    // 7. Save to order_assignments for record
-    await supabase.from("order_assignments").insert([
-      {
-        order_id: proposal.order_id,
-        stock_id: proposal.stock_id,
-        farmer_id: farmerId,
-        quantity_allocated: proposal.quantity_proposed,
-        match_score: 1.0, // Direct acceptance
-      },
-    ]);
+    // 6. Save to order_assignments for record (soft-fail if table unavailable)
+    try {
+      await supabase.from("order_assignments").insert([
+        {
+          order_id: proposal.order_id,
+          stock_id: proposal.stock_id,
+          farmer_id: farmerId,
+          quantity_allocated: proposal.quantity_proposed,
+          match_score: 1.0,
+        },
+      ]);
+    } catch (_assignErr) {}
 
-    // TODO: Notify buyer to complete payment
+    // Note: Cancellation of competing proposals and stock release is handled by database triggers
+
+    // Notify buyer that farmer accepted and payment is now required
+    try {
+      const { data: ord } = await supabase
+        .from("placed_orders")
+        .select("buyer_id")
+        .eq("id", proposal.order_id)
+        .single();
+      if (ord && ord.buyer_id) {
+        await sendSystemNotification(ord.buyer_id, {
+          message: `Farmer accepted your proposal for order ${proposal.order_id}. Please complete payment.`,
+          severity: "info",
+        });
+      }
+    } catch (notifErr) {
+      console.warn("Failed to notify buyer about acceptance:", notifErr.message);
+    }
 
     return res.status(200).json({
       message:
@@ -291,7 +347,7 @@ const rejectProposal = async (req, res) => {
         .json({ message: "You don't have permission to reject this proposal" });
     }
 
-    // 2. Update proposal status
+    // 2. Update proposal status (triggers will handle order/stock status updates)
     await supabase
       .from("match_proposals")
       .update({
@@ -300,16 +356,24 @@ const rejectProposal = async (req, res) => {
       })
       .eq("id", proposalId);
 
-    // 3. Reset order status so buyer can select another farmer
-    await supabase
-      .from("placed_orders")
-      .update({
-        status: "OPEN",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", proposal.order_id);
+    // Note: Order status reset to OPEN and stock release are handled by database triggers
 
-    // TODO: Notify buyer that farmer rejected
+    // Notify buyer that farmer rejected the proposal
+    try {
+      const { data: ord } = await supabase
+        .from("placed_orders")
+        .select("buyer_id")
+        .eq("id", proposal.order_id)
+        .single();
+      if (ord && ord.buyer_id) {
+        await sendSystemNotification(ord.buyer_id, {
+          message: `Farmer rejected your proposal for order ${proposal.order_id}. Please choose another farmer.`,
+          severity: "info",
+        });
+      }
+    } catch (notifErr) {
+      console.warn("Failed to notify buyer about rejection:", notifErr.message);
+    }
 
     return res.status(200).json({
       message: "Proposal rejected. Buyer can select another farmer.",

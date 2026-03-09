@@ -25,7 +25,7 @@ async function alertEconomicCenterPriceUpdate(priceData) {
     const { data: farmers, error: farmersErr } = await supabase
       .from("users")
       .select("id, phone")
-      .eq("role", "farmer")
+      .eq("role", "FARMER")
       .eq("sms_alerts_enabled", true);
 
     if (farmersErr) {
@@ -60,12 +60,18 @@ async function alertEconomicCenterPriceUpdate(priceData) {
 
     // Send SMS if phone numbers available
     const phoneNumbers = farmers.map(f => f.phone).filter(p => p);
+    let smsSentCount = 0;
     if (phoneNumbers.length > 0) {
       try {
         const smsMessage = `FreshRoute: ${fruit_name} price updated to Rs. ${min_price}-${max_price}/kg at Dambulla market.`;
         const smsBatch = phoneNumbers.map(phone => ({ phone, message: smsMessage }));
-        await sendBatchSMS(smsBatch);
-        console.log(`[Price Alert] ✅ SMS sent to ${phoneNumbers.length} farmers`);
+        const smsResults = await sendBatchSMS(smsBatch);
+        const sentCount = smsResults.filter(r => r.status === "fulfilled").length;
+        const skippedCount = smsResults.filter(r => r.status === "skipped").length;
+        const failedCount = smsResults.filter(r => r.status === "rejected").length;
+        smsSentCount = sentCount;
+
+        console.log(`[Price Alert] SMS results: sent=${sentCount}, skipped=${skippedCount}, failed=${failedCount}`);
       } catch (smsErr) {
         console.warn("[Price Alert] SMS sending failed:", smsErr.message);
       }
@@ -74,7 +80,7 @@ async function alertEconomicCenterPriceUpdate(priceData) {
     return {
       success: true,
       notificationsSent: notificationCount,
-      smsSent: phoneNumbers.length,
+      smsSent: smsSentCount,
     };
   } catch (err) {
     console.error("[Price Alert] Error:", err.message);
@@ -96,7 +102,7 @@ async function alertForecastUpdate(forecastData) {
     const { data: farmers, error: farmersErr } = await supabase
       .from("users")
       .select("id, phone")
-      .eq("role", "farmer")
+      .eq("role", "FARMER")
       .eq("sms_alerts_enabled", true);
 
     if (farmersErr) {
@@ -136,12 +142,18 @@ async function alertForecastUpdate(forecastData) {
 
     // Send SMS if phone numbers available
     const phoneNumbers = farmers.map(f => f.phone).filter(p => p);
+    let smsSentCount = 0;
     if (phoneNumbers.length > 0) {
       try {
         const smsMessage = `FreshRoute Forecast: ${fruit_name} expected at Rs. ${predicted_price}/kg on ${forecastDateStr}.`;
         const smsBatch = phoneNumbers.map(phone => ({ phone, message: smsMessage }));
-        await sendBatchSMS(smsBatch);
-        console.log(`[Forecast Alert] ✅ SMS sent to ${phoneNumbers.length} farmers`);
+        const smsResults = await sendBatchSMS(smsBatch);
+        const sentCount = smsResults.filter(r => r.status === "fulfilled").length;
+        const skippedCount = smsResults.filter(r => r.status === "skipped").length;
+        const failedCount = smsResults.filter(r => r.status === "rejected").length;
+        smsSentCount = sentCount;
+
+        console.log(`[Forecast Alert] SMS results: sent=${sentCount}, skipped=${skippedCount}, failed=${failedCount}`);
       } catch (smsErr) {
         console.warn("[Forecast Alert] SMS sending failed:", smsErr.message);
       }
@@ -150,7 +162,7 @@ async function alertForecastUpdate(forecastData) {
     return {
       success: true,
       notificationsSent: notificationCount,
-      smsSent: phoneNumbers.length,
+      smsSent: smsSentCount,
     };
   } catch (err) {
     console.error("[Forecast Alert] Error:", err.message);
@@ -179,7 +191,7 @@ async function alertFreshRoutePriceUpdate(priceData) {
     const { data: farmers, error: farmersErr } = await supabase
       .from("users")
       .select("id, phone")
-      .eq("role", "farmer")
+      .eq("role", "FARMER")
       .eq("sms_alerts_enabled", true);
 
     if (farmersErr) {
@@ -217,12 +229,18 @@ async function alertFreshRoutePriceUpdate(priceData) {
 
     // Send SMS if phone numbers available
     const phoneNumbers = farmers.map(f => f.phone).filter(p => p);
+    let smsSentCount = 0;
     if (phoneNumbers.length > 0) {
       try {
         const smsMessage = `FreshRoute: ${fruit_name} prices updated (${dateLabel}).\n${gradeLines}`;
         const smsBatch = phoneNumbers.map(phone => ({ phone, message: smsMessage }));
-        await sendBatchSMS(smsBatch);
-        console.log(`[FreshRoute Alert] ✅ SMS sent to ${phoneNumbers.length} farmers`);
+        const smsResults = await sendBatchSMS(smsBatch);
+        const sentCount = smsResults.filter(r => r.status === "fulfilled").length;
+        const skippedCount = smsResults.filter(r => r.status === "skipped").length;
+        const failedCount = smsResults.filter(r => r.status === "rejected").length;
+        smsSentCount = sentCount;
+
+        console.log(`[FreshRoute Alert] SMS results: sent=${sentCount}, skipped=${skippedCount}, failed=${failedCount}`);
       } catch (smsErr) {
         console.warn("[FreshRoute Alert] SMS sending failed:", smsErr.message);
       }
@@ -231,7 +249,7 @@ async function alertFreshRoutePriceUpdate(priceData) {
     return {
       success: true,
       notificationsSent: notificationCount,
-      smsSent: phoneNumbers.length,
+      smsSent: smsSentCount,
     };
   } catch (err) {
     console.error("[FreshRoute Alert] Error:", err.message);

@@ -5,6 +5,7 @@
 ### Backend Controllers
 
 - [x] `Backend/controllers/buyer/paymentController.js` - PayHere preauth, capture, void
+- [ ] Add support for 50% deposit + customer token capture (payhereController, deliveryController)
 - [x] `Backend/controllers/transporter/deliveryController.js` - Delivery & quality confirmation
 
 ### Backend Routes

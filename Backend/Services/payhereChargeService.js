@@ -160,7 +160,7 @@ async function runDailyAutoCharge() {
         await supabase
           .from("placed_orders")
           .update({
-            status: "PAID_PENDING_DELIVERY",
+            status: "AUTHORIZED_PAYMENT",
             payment_status: "AUTHORIZED",
             auto_charge_status: "CHARGED",
             updated_at: now,

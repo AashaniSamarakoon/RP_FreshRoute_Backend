@@ -1,5 +1,5 @@
 // Notifications Controller - API endpoints for frontend
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin } = require("../../utils/supabaseClient");
 
 /**
  * GET /api/farmer/notifications
@@ -13,7 +13,7 @@ async function getNotifications(req, res) {
     const offset = parseInt(req.query.offset) || 0;
     const read = req.query.read ? req.query.read === "true" : null;
 
-    let query = supabase
+    let query = supabaseAdmin
       .from("notifications")
       .select("*")
       .eq("user_id", userId)
@@ -31,7 +31,7 @@ async function getNotifications(req, res) {
     if (error) throw error;
 
     // Get unread count
-    const { count: unreadCount, error: countError } = await supabase
+    const { count: unreadCount, error: countError } = await supabaseAdmin
       .from("notifications")
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId)
@@ -63,11 +63,7 @@ async function getNotificationById(req, res) {
       return res.status(400).json({ error: "Notification id is required" });
     }
 
-    if (!id) {
-      return res.status(400).json({ error: "Notification id is required" });
-    }
-
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("notifications")
       .select("*")
       .eq("id", id)
@@ -99,12 +95,8 @@ async function markAsRead(req, res) {
       return res.status(400).json({ error: "Notification id is required" });
     }
 
-    if (!id) {
-      return res.status(400).json({ error: "Notification id is required" });
-    }
-
     // Verify notification belongs to user
-    const { data: notification, error: fetchError } = await supabase
+    const { data: notification, error: fetchError } = await supabaseAdmin
       .from("notifications")
       .select("id")
       .eq("id", id)
@@ -116,7 +108,7 @@ async function markAsRead(req, res) {
     }
 
     // Mark as read
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("notifications")
       .update({ read_at: new Date().toISOString() })
       .eq("id", id);
@@ -138,7 +130,7 @@ async function markAllAsRead(req, res) {
   try {
     const userId = req.user.id;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("notifications")
       .update({ read_at: new Date().toISOString() })
       .eq("user_id", userId)
@@ -167,7 +159,7 @@ async function deleteNotification(req, res) {
     }
 
     // Verify notification belongs to user
-    const { data: notification, error: fetchError } = await supabase
+    const { data: notification, error: fetchError } = await supabaseAdmin
       .from("notifications")
       .select("id")
       .eq("id", id)
@@ -179,7 +171,7 @@ async function deleteNotification(req, res) {
     }
 
     // Delete notification
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("notifications")
       .delete()
       .eq("id", id);
@@ -201,18 +193,18 @@ async function getNotificationStats(req, res) {
   try {
     const userId = req.user.id;
 
-    const { data: all, error: allError } = await supabase
+    const { count: totalCount, error: allError } = await supabaseAdmin
       .from("notifications")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .eq("user_id", userId);
 
-    const { data: unread, error: unreadError } = await supabase
+    const { count: unreadCount, error: unreadError } = await supabaseAdmin
       .from("notifications")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .is("read_at", null);
 
-    const { data: byCategory, error: categoryError } = await supabase
+    const { data: byCategory, error: categoryError } = await supabaseAdmin
       .from("notifications")
       .select("category")
       .eq("user_id", userId);
@@ -228,8 +220,8 @@ async function getNotificationStats(req, res) {
     return res.json({
       success: true,
       stats: {
-        total: all.length || 0,
-        unread: unread.length || 0,
+        total: totalCount || 0,
+        unread: unreadCount || 0,
         byCategory: categoryCount,
       },
     });
@@ -261,12 +253,12 @@ async function getNotificationsByCategory(req, res) {
       "demand_update": "demand_update"
     };
 
-    const mappedCategory = categoryMap[category];
+    const mappedCategory = categoryMap[String(category).toLowerCase()];
     if (!mappedCategory) {
       return res.status(400).json({ error: "Invalid category" });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("notifications")
       .select("*")
       .eq("user_id", userId)
