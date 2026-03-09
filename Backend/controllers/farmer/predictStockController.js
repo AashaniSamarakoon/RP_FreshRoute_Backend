@@ -135,6 +135,15 @@ const submitPredictStock = async (req, res) => {
       blockchainStatus = "Success";
       console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id} (tx=${txId})`);
       data.blockchainTxId = txId;
+      // store txId in Supabase record for future reference
+      try {
+        await supabase
+          .from("estimated_stock")
+          .update({ blockchain_tx_id: txId })
+          .eq("id", data.id);
+      } catch (_e) {
+        console.warn("Failed to persist blockchain txId for stock", data.id, _e.message);
+      }
     } catch (bcError) {
       console.error("Blockchain Failed:", bcError);
       blockchainStatus = "Failed";
@@ -231,6 +240,15 @@ const updateStock = async (req, res) => {
       await close();
       blockchainStatus = "Success";
       console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId} (tx=${txId})`);
+      // persist tx id on update as well
+      try {
+        await supabase
+          .from("estimated_stock")
+          .update({ blockchain_tx_id: txId })
+          .eq("id", stockId);
+      } catch (_e) {
+        console.warn("Failed to persist blockchain txId for stock update", stockId, _e.message);
+      }
     } catch (bcError) {
       console.error("Blockchain Update Failed:", bcError);
       blockchainStatus = "Failed";
@@ -260,7 +278,7 @@ const getEstimatedStocks = async (req, res) => {
     let query = supabase
       .from("estimated_stock")
       .select(
-        "id, fruit_type, variant, quantity, grade, estimated_harvest_date, price_per_kg, image_url, status, created_at",
+        "id, fruit_type, variant, quantity, grade, estimated_harvest_date, price_per_kg, image_url, status, blockchain_tx_id, created_at",
       )
       .eq("farmer_id", userId)
       .order("created_at", { ascending: false });
