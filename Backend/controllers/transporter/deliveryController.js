@@ -151,43 +151,69 @@ async function processPickupPayment(orderId, transporterId) {
     try {
       const authTx = await submitWithTx(contract, "AuthorizePayment", blockchainOrderId, "");
       console.log("AuthorizePayment tx", authTx);
-    } catch (authErr) {
-      // if not found, create then authorize
-      if (authErr.message && authErr.message.includes("not found")) {
-        try {
-          await submitWithTx(contract, "InitiatePayment", blockchainOrderId, (finalTotal || 0).toString(), "payhere");
-          await submitWithTx(contract, "AuthorizePayment", blockchainOrderId, "");
-        } catch (inner) {
-          console.warn("ledger payment init/authorize failed", inner.message);
+        if (authTx) {
+          await supabase
+            .from("payments")
+            .update({ blockchain_tx_id: authTx })
+            .eq("order_id", orderId);
         }
-      } else {
-        console.warn("ledger authorize error", authErr.message);
+      } catch (authErr) {
+        // if not found, create then authorize
+        if (authErr.message && authErr.message.includes("not found")) {
+          try {
+            await submitWithTx(contract, "InitiatePayment", blockchainOrderId, (finalTotal || 0).toString(), "payhere");
+            const authTx2 = await submitWithTx(contract, "AuthorizePayment", blockchainOrderId, "");
+            if (authTx2) {
+              await supabase
+                .from("payments")
+                .update({ blockchain_tx_id: authTx2 })
+                .eq("order_id", orderId);
+            }
+          } catch (inner) {
+            console.warn("ledger payment init/authorize failed", inner.message);
+          }
+        } else {
+          console.warn("ledger authorize error", authErr.message);
+        }
       }
+
+      const relTx = await submitWithTx(
+        contract,
+        "ReleasePayment",
+        blockchainOrderId,
+        blockchainTransporterId,
+        (farmerShare || 0).toString(),
+        (transporterFee || 0).toString(),
+        (platformFee || 0).toString(),
+      );
+      console.log("ReleasePayment tx", relTx);
+      if (relTx) {
+        await supabase
+          .from("payments")
+          .update({ blockchain_tx_id: relTx })
+          .eq("order_id", orderId);
+        await supabase
+          .from("placed_orders")
+          .update({ blockchain_tx_id: relTx })
+          .eq("id", orderId);
+      }
+      const confTx = await submitWithTx(
+        contract,
+        "ConfirmPaymentRelease",
+        blockchainOrderId,
+        "Quality confirmed – pickup",
+      );
+      console.log("ConfirmPaymentRelease tx", confTx);
+      if (confTx) {
+        await supabase
+          .from("payments")
+          .update({ blockchain_tx_id: confTx })
+          .eq("order_id", orderId);
+      }
+    } finally {
+      await close();
     }
-
-    const relTx = await submitWithTx(
-      contract,
-      "ReleasePayment",
-      blockchainOrderId,
-      blockchainTransporterId,
-      (farmerShare || 0).toString(),
-      (transporterFee || 0).toString(),
-      (platformFee || 0).toString(),
-    );
-    console.log("ReleasePayment tx", relTx);
-    const confTx = await submitWithTx(
-      contract,
-      "ConfirmPaymentRelease",
-      blockchainOrderId,
-      "Quality confirmed – pickup",
-    );
-    console.log("ConfirmPaymentRelease tx", confTx);
-  } finally {
-    await close();
-  }
-
-  return { success: true, order };
-}
+  } // end of processPickupPayment function
 
 // helper to compute final price breakdown for an order (no side effects)
 // this is the transporter-facing total: 1% service charge + any transporter fee,
@@ -449,6 +475,12 @@ const confirmQualityAndPickup = async (req, res) => {
           "Poor quality at pickup",
         );
         console.log("RefundPayment tx", refundTx);
+        if (refundTx) {
+          await supabase
+            .from("payments")
+            .update({ blockchain_tx_id: refundTx })
+            .eq("order_id", orderId);
+        }
         await close();
       } catch (bcErr) {
         console.error("[Blockchain] RefundPayment failed:", bcErr.message);

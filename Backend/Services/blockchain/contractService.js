@@ -71,7 +71,20 @@ async function getContract(userId, contractName) {
 
   // 4. GET SPECIFIC CONTRACT
   // We connect to chaincode 'freshroute' on FreshRoute Network
-  const contract = network.getContract("freshroute", contractName);
+  let contract;
+  if (contractName) {
+    contract = network.getContract("freshroute", contractName);
+  } else {
+    contract = network.getContract("freshroute");
+  }
+
+  // diagnostic: ensure the contract seems fully-featured
+  if (!contract || typeof contract.createTransaction !== "function") {
+    console.warn(
+      `[getContract] returned contract for name='${contractName}' does not support createTransaction; ` +
+        "it may be a generic fallback or the contract isn't deployed on the network",
+    );
+  }
 
   return {
     contract,

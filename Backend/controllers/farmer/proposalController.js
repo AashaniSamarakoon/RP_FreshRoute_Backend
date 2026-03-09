@@ -234,6 +234,21 @@ const acceptProposal = async (req, res) => {
       await close();
       blockchainStatus = "Success";
       console.log(`[Blockchain] RegisterAcceptedDeal Success: PROPOSAL_${proposalId} tx=${txId}`);
+      if (txId) {
+        // persist to match_proposals row
+        try {
+          await supabase
+            .from("match_proposals")
+            .update({ blockchain_tx_id: txId })
+            .eq("id", proposalId);
+        } catch (_e) {
+          console.warn(
+            "Failed to save blockchain txId for proposal",
+            proposalId,
+            _e.message,
+          );
+        }
+      }
     } catch (bcErr) {
       // ledger call failed – log and allow the workflow to continue with a failed status
       blockchainStatus = "Failed";

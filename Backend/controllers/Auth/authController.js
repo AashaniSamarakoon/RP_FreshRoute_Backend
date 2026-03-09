@@ -101,6 +101,17 @@ const signup = async (req, res) => {
           const regTx = await submitWithTx(contract, "RegisterUser", user.id, fullName, normalizedRole);
           ledgerStatus = "Registered on Ledger";
           console.log("RegisterUser tx", regTx);
+          if (regTx) {
+            // store txId on user record
+            try {
+              await supabaseAdmin
+                .from("users")
+                .update({ blockchain_tx_id: regTx })
+                .eq("id", user.id);
+            } catch (_e) {
+              console.warn("Failed to persist user blockchain txId", _e.message);
+            }
+          }
         } catch (txError) {
           ledgerStatus = "Identity Created, Ledger Failed";
         } finally {
