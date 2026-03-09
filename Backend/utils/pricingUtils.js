@@ -26,14 +26,18 @@ async function fetchUnitPrice(fruit, variant, grade, date) {
  *
  * @param {{ quantity: number, distance_km?: number }} order
  * @param {number|null} unitPrice  LKR per kg
+ * @param {{platformFeeRate?:number, deliveryRatePerKm?:number}} [options] optional overrides for fee rates
  * @returns {{unitPrice:number|null, basePrice:number|null, serviceCharge:number|null, platformFeeRate:number, deliveryFee:number, totalPrice:number|null}}
  */
-function calculatePrice(order, unitPrice) {
+function calculatePrice(order, unitPrice, options = {}) {
   const basePrice = unitPrice != null ? unitPrice * order.quantity : null;
-  const platformFeeRate = 0.02; // buyers pay 2% platform fee
+  // allow callers to override the platform fee rate (default buyer 2%)
+  const platformFeeRate = options.platformFeeRate != null ? options.platformFeeRate : 0.02; // buyers pay 2% platform fee
   const serviceCharge = basePrice != null ? basePrice * platformFeeRate : null;
   const distanceKm = order.distance_km || 0;
-  const deliveryFee = distanceKm * 35;
+  // delivery rate could be adjusted (default 35 LKR/km)
+  const deliveryRatePerKm = options.deliveryRatePerKm || 35;
+  const deliveryFee = distanceKm * deliveryRatePerKm;
   const totalPrice =
     basePrice != null ? basePrice + (serviceCharge || 0) + deliveryFee : null;
   return { unitPrice, basePrice, serviceCharge, platformFeeRate, deliveryFee, totalPrice };
@@ -42,20 +46,24 @@ function calculatePrice(order, unitPrice) {
 /**
  * Calculates the price breakdown shown to the FARMER.
  * - No delivery fee (transport cost is not the farmer's concern)
- * - 1.4% platform service fee deducted from gross earnings
+ * - 1.4% platform service fee deducted from gross earnings by default
  * - farmerEarning = grossEarning - platformFee  (what farmer actually receives)
  *
  * @param {{ quantity: number }} order
  * @param {number|null} unitPrice  LKR per kg
+ * @param {{platformFeeRate?:number}} [options] optional overrides (e.g. promotional rate)
  * @returns {{unitPrice:number|null, grossEarning:number|null, platformFee:number|null, platformFeeRate:number, farmerEarning:number|null}}
  */
-function calculateFarmerPrice(order, unitPrice) {
-  const grossEarning = unitPrice != null ? unitPrice * order.quantity : null;
-  // platform fee is always 1.4% of gross earning; expose rate for clients
-  const platformFeeRate = 0.014;
-  const platformFee  = grossEarning != null ? grossEarning * platformFeeRate : null;
-  const farmerEarning =
-    grossEarning != null ? grossEarning - platformFee : null;
+function calculateFarmerPrice(order, unitPrice, options = {}) {
+  // reuse calculatePrice to avoid duplication; force deliveryRatePerKm=0
+  const defaultRate = 0.014;
+  const platformFeeRate = options.platformFeeRate != null ? options.platformFeeRate : defaultRate;
+
+  const buyerView = calculatePrice(order, unitPrice, { platformFeeRate, deliveryRatePerKm: 0 });
+  const grossEarning = buyerView.basePrice;
+  const platformFee = buyerView.serviceCharge;
+  const farmerEarning = grossEarning != null ? grossEarning - platformFee : null;
+
   return { unitPrice, grossEarning, platformFee, platformFeeRate, farmerEarning };
 }
 

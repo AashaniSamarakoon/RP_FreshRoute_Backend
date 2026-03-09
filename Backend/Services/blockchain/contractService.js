@@ -75,6 +75,7 @@ async function getContract(userId, contractName) {
 
   return {
     contract,
+    network,
     close: () => {
       gateway.close();
       peerClient.close();
