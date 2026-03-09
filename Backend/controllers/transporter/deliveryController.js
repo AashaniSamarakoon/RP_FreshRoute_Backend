@@ -1,6 +1,9 @@
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const axios = require("axios");
+const { fetchUnitPrice } = require("../../utils/pricingUtils");
+const { sendSystemNotification } = require("../../Services/notificationsService");
+
 
 // Helper: Get transporter ID from user ID
 // transporter table only stores user_id so we return that value directly
@@ -225,6 +228,84 @@ const confirmQualityAndPickup = async (req, res) => {
       });
     }
 
+    // before releasing funds to farmer we may need to capture the remaining balance
+    // if customer-token deposit flow was used
+    let captureSucceeded = true;
+    if (order.payhere_customer_token) {
+      // compute the remaining amount based on current market price for the pickup date
+      const useDate = order.required_date || new Date().toISOString().split("T")[0];
+      const unitPrice = await fetchUnitPrice(
+        order.fruit_type,
+        order.variant,
+        order.grade,
+        useDate,
+      );
+      const base = (unitPrice || 0) * (order.quantity || 0);
+      const serviceCharge = base * 0.01; // 1% service fee
+      const finalTotal = base + serviceCharge + (order.transporter_fee_amount || 0);
+      const depositPaid = parseFloat(order.deposit_paid || 0);
+      const remaining = finalTotal - depositPaid;
+
+      if (remaining > 0) {
+        console.log(
+          `[PayHere] Attempting automatic capture of remaining ${remaining.toFixed(
+            2,
+          )} for order ${orderId}`,
+        );
+        try {
+          const resp = await axios.post(
+            `${process.env.PAYHERE_BASE_URL || "https://sandbox.payhere.lk"}/pay/checkout`,
+            {
+              merchant_id: process.env.PAYHERE_MERCHANT_ID,
+              order_id: orderId,
+              amount: remaining.toFixed(2),
+              currency: "LKR",
+              customer_token: order.payhere_customer_token,
+            },
+          );
+          if (resp.data && resp.data.status !== "success") {
+            throw new Error(
+              `capture response not success: ${JSON.stringify(resp.data)}`,
+            );
+          }
+          // update payments record for final capture
+          const now = new Date().toISOString();
+          await supabase
+            .from("payments")
+            .update({
+              amount: finalTotal,
+              status: "RELEASED",
+              updated_at: now,
+              released_at: now,
+            })
+            .eq("order_id", orderId);
+          console.log("[PayHere] Final charge succeeded");
+          captureSucceeded = true;
+        } catch (err) {
+          console.error("[PayHere] Automatic final charge failed:", err.message);
+          captureSucceeded = false;
+          await supabase
+            .from("placed_orders")
+            .update({
+              status: "PAYMENT_FAILED",
+              payment_status: "FAILED",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", orderId);
+          // notify buyer about failure
+          await sendSystemNotification(order.buyer_id, {
+            message:
+              "Final payment attempt failed - please re-authorize your card.",
+            severity: "critical",
+          });
+          return res.status(200).json({
+            success: false,
+            message: "Final charge failed, buyer notified",
+          });
+        }
+      }
+    }
+
     // Initiate payment release on blockchain
     const blockchainOrderId = `ORDER_${orderId}`;
     const blockchainTransporterId = `TRANSPORTER_${transporterId}`;
@@ -286,11 +367,13 @@ const confirmQualityAndPickup = async (req, res) => {
       });
     }
 
-    // Update order to IN_TRANSIT status (picked up, payment released)
+    // Update order status depending on whether we already charged final balance
+    const newOrderStatus =
+      captureSucceeded && order.payhere_customer_token ? "COMPLETED" : "IN_TRANSIT";
     await supabase
       .from("placed_orders")
       .update({
-        status: "IN_TRANSIT",
+        status: newOrderStatus,
         payment_status: "RELEASED",
         quality_confirmed_at: new Date().toISOString(),
         picked_up_at: new Date().toISOString(),
@@ -372,10 +455,14 @@ const confirmQualityAndPickup = async (req, res) => {
           "Quality confirmed, goods picked up, and payment released to farmer successfully",
         orderId: orderId,
         qualityScore: qualityScore,
-        orderStatus: "IN_TRANSIT",
+        orderStatus:
+          captureSucceeded && order.payhere_customer_token ? "COMPLETED" : "IN_TRANSIT",
         paymentStatus: "RELEASED",
         pickedUpAt: new Date().toISOString(),
-        note: "Payment released to farmer. Goods are now in transit to buyer.",
+        note:
+          captureSucceeded && order.payhere_customer_token
+            ? "Final charge succeeded - order completed and receipt generated."
+            : "Payment released to farmer. Goods are now in transit to buyer.",
       });
     } catch (bcError) {
       console.error("Blockchain confirmation failed:", bcError.message);

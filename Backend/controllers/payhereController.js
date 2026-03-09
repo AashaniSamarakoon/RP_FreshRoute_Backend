@@ -63,6 +63,7 @@ const handleNotify = async (req, res) => {
     payhere_currency,
     status_code,
     md5sig,
+    customer_token,
   } = req.body;
 
   if (!process.env.PAYHERE_MERCHANT_SECRET || !process.env.PAYHERE_MERCHANT_ID) {
@@ -84,7 +85,70 @@ const handleNotify = async (req, res) => {
     return ok();
   }
 
-  // 2. Handle by status code
+  // 2. Handle preapproval notifications (customer_token indicates tokenization)
+  if (customer_token) {
+    console.log("[PayHere] Preapproval notification received — order:", order_id);
+    // record deposit and customer token on order
+    try {
+      const depositAmount = parseFloat(payhere_amount) || 0;
+      const { data: orderRow, error: ordErr } = await supabase
+        .from("placed_orders")
+        .select("id, buyer_id, status")
+        .eq("id", order_id)
+        .single();
+      if (ordErr || !orderRow) {
+        console.error("[PayHere] Preapproval: order not found", ordErr?.message);
+        return ok();
+      }
+      await supabase
+        .from("placed_orders")
+        .update({
+          status: "AUTHORIZED_PAYMENT",
+          payment_status: "AUTHORIZED",
+          payhere_customer_token: customer_token,
+          deposit_paid: depositAmount,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order_id);
+
+      // upsert payments record for deposit
+      const { data: existingPayment } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("order_id", order_id)
+        .maybeSingle();
+      const now = new Date().toISOString();
+      if (existingPayment) {
+        await supabase
+          .from("payments")
+          .update({
+            amount: depositAmount,
+            status: "AUTHORIZED",
+            updated_at: now,
+            authorized_at: now,
+          })
+          .eq("id", existingPayment.id);
+      } else {
+        await supabase.from("payments").insert({
+          order_id,
+          buyer_id: orderRow.buyer_id,
+          amount: depositAmount,
+          currency: payhere_currency || "LKR",
+          status: "AUTHORIZED",
+          payment_method: "payhere",
+          authorized_at: now,
+          initiated_at: now,
+          updated_at: now,
+        });
+      }
+    } catch (e) {
+      console.error("[PayHere] Preapproval DB error:", e.message);
+    }
+    // don't process further as a normal capture
+    return ok();
+  }
+
+  // 3. Handle by status code
   const code = String(status_code);
 
   const statusLabels = {

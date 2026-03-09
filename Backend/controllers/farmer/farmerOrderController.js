@@ -19,6 +19,7 @@ const updateOrderStatusReady = async (req, res) => {
   try {
     const userId = req.user.id;
     const { orderId } = req.params;
+    console.log(`[Farmer] updateOrderStatusReady called by farmer ${userId} for order ${orderId}`);
 
     const { data: order } = await supabase
       .from("placed_orders")
@@ -34,14 +35,34 @@ const updateOrderStatusReady = async (req, res) => {
         message: `Expected PACKING or AUTHORIZED_PAYMENT, current status is: ${order.status}`,
       });
 
-    await supabase
+    const { data: updatedRows, error: updateErr } = await supabase
       .from("placed_orders")
       .update({
         status: "READY_FOR_PICKUP",
         ready_for_pickup_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq("id", orderId);
+      .eq("id", orderId)
+      .select("id,status,payment_status,ready_for_pickup_at");
+
+    if (updateErr) {
+      console.error("Failed to mark order ready:", updateErr.message);
+      return res.status(500).json({
+        success: false,
+        message: "Database error updating order status",
+        error: updateErr.message,
+      });
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      console.warn("Order ready update matched no rows?", orderId);
+      return res.status(404).json({
+        success: false,
+        message: "Order not found when trying to mark ready",
+      });
+    }
+
+    const updatedOrder = updatedRows[0];
 
     // Notify buyer that order is ready for pickup
     try {
@@ -60,7 +81,11 @@ const updateOrderStatusReady = async (req, res) => {
       console.warn("Failed to notify buyer about ready state:", notifErr.message);
     }
 
-    return res.status(200).json({ success: true, orderId, status: "READY_FOR_PICKUP" });
+    return res.status(200).json({
+      success: true,
+      orderId,
+      updatedOrder,
+    });
   } catch (err) {
     console.error("UpdateOrderStatusReady Error:", err);
     return res.status(500).json({ message: err.message });
