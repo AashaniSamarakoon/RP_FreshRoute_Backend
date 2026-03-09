@@ -36,7 +36,11 @@ const updateOrderStatusReady = async (req, res) => {
 
     await supabase
       .from("placed_orders")
-      .update({ status: "READY_FOR_PICKUP", updated_at: new Date().toISOString() })
+      .update({
+        status: "READY_FOR_PICKUP",
+        ready_for_pickup_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", orderId);
 
     // Notify buyer that order is ready for pickup

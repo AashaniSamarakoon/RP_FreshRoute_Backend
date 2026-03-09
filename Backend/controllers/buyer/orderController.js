@@ -291,24 +291,10 @@ const getOrderDetails = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // Add dummy farmer_accepted_at if order is matched/accepted
-    if (
-      orderData &&
-      !orderData.farmer_accepted_at &&
-      (orderData.status === "MATCHED" ||
-        orderData.status === "PENDING_BUYER" ||
-        orderData.status === "PENDING_FARMER" ||
-        orderData.status === "AWAITING_PAYMENT" ||
-        orderData.status === "AUTHORIZED_PAYMENT" ||
-        orderData.status === "IN_TRANSIT" ||
-        orderData.status === "DELIVERED" ||
-        orderData.status === "COMPLETED")
-    ) {
-      // Add 1-2 hours to created_at for dummy accepted time
-      const createdTime = new Date(orderData.created_at).getTime();
-      const acceptedTime = new Date(createdTime + 1.5 * 60 * 60 * 1000); // 1.5 hours later
-      orderData.farmer_accepted_at = acceptedTime.toISOString();
-    }
+    // farmer_accepted_at is now explicitly set when a farmer accepts a proposal
+    // (see farmer/proposalController), so there is no need to fabricate a value here.
+    // Previous versions injected a dummy timestamp for older rows; if you still
+    // encounter nulls they can be backfilled with a migration or left null.
 
     let productImages = [];
     let harvestDate = null;

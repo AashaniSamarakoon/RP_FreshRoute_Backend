@@ -247,6 +247,12 @@ const acceptProposal = async (req, res) => {
       })
       .eq("id", proposalId);
 
+    // also stamp the order row so we know when farmer accepted
+    await supabase
+      .from("placed_orders")
+      .update({ farmer_accepted_at: new Date().toISOString() })
+      .eq("id", proposal.order_id);
+
     // Note: Stock status update to MATCHED and order status to AWAITING_PAYMENT
     // are now handled automatically by database triggers
 

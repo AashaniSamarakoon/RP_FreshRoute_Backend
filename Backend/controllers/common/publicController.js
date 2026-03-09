@@ -81,24 +81,28 @@ const getPublicBatch = async (req, res) => {
     if (cached) return res.status(200).json(cached);
 
     // 3. Supabase — fetch order linked to this harvest batch
-    const { data: order } = await supabase
+    const { data: order, error: orderError } = await supabase
       .from("placed_orders")
       .select(
         "id, status, payment_status, quantity, fruit_type, variant, grade," +
         "farmer_share_amount, transporter_fee_amount, platform_fee_amount, total_amount," +
-        "harvest_id, selected_farmer_id, distance_km," +
-        "created_at, farmer_accepted_at, quality_confirmed_at, picked_up_at, updated_at"
+        "harvest_id, selected_farmer_id," +
+        "created_at, farmer_accepted_at, picked_up_at, updated_at"
       )
       .eq("harvest_id", batchId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
+    // debug: log fetched order row and any error
+    console.log("[PublicPortal] fetched order:", order, "error:", orderError);
+
     // Fetch stock + farmer in parallel
     const [stockRes, farmerRes] = await Promise.all([
       supabase
         .from("estimated_stock")
-        .select("id, fruit_type, grade, quantity, estimated_harvest_date, image_hash, farmer_id")
+        // include created_at so portal can use stock timestamp when no order exists
+        .select("id, fruit_type, grade, quantity, estimated_harvest_date, image_hash, farmer_id, created_at")
         .eq("id", batchId)
         .single(),
       order?.selected_farmer_id
@@ -112,6 +116,7 @@ const getPublicBatch = async (req, res) => {
 
     const stock  = stockRes.data;
     const farmer = farmerRes.data;
+    const stockCreatedAt = stock?.created_at || null;
 
     if (!stock) {
       console.error("[PublicPortal] Stock not found. batchId:", batchId, "error:", stockRes.error?.message);
@@ -194,7 +199,10 @@ const getPublicBatch = async (req, res) => {
       },
 
       journey: {
-        createdAt:        order?.created_at         || null,
+        // 'createdAt' marks when the farmer accepted the order (journey start).
+        // fall back to buyer-created timestamp or stock-created timestamp if
+        // acceptance time is missing.
+        createdAt:        order?.farmer_accepted_at || order?.created_at || stockCreatedAt || null,
         farmerAcceptedAt: order?.farmer_accepted_at || null,
         pickedUpAt,
         deliveredAt,
