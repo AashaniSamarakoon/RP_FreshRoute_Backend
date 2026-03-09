@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { onNewStockAdded } = require("../../Services/matchingService");
 const { uploadImageToSupabase } = require("../../utils/uploadUtils");
@@ -24,7 +24,7 @@ const getStockById = async (req, res) => {
     if (data && data.farmer && data.farmer.user_id) {
       const { data: userInfo } = await supabase
         .from("users")
-        .select("id,name")
+        .select("id,first_name,last_name")
         .eq("id", data.farmer.user_id)
         .single();
       data.farmer.user = userInfo || null;
@@ -81,10 +81,10 @@ const submitPredictStock = async (req, res) => {
       }
     }
 
-    // Fetch Farmer ID
+    // Fetch Farmer record (table now uses user_id as primary key)
     const { data: farmerData } = await supabase
       .from("farmers")
-      .select("id")
+      .select("user_id")
       .eq("user_id", userId)
       .single();
 
@@ -96,7 +96,8 @@ const submitPredictStock = async (req, res) => {
       .from("estimated_stock")
       .insert([
         {
-          farmer_id: farmerData.id,
+          // the farmer_id column refers directly to the user_id in the updated schema
+          farmer_id: farmerData.user_id,
           fruit_type,
           variant,
           quantity: parseInt(quantity),
@@ -126,13 +127,14 @@ const submitPredictStock = async (req, res) => {
         `${fruit_type}_${variant}`,
         quantity.toString(),
         (price_per_unit || "0").toString(),
-        JSON.stringify(imageHashes), // Pass array as string if CC expects string, or update CC to accept string[]
+        JSON.stringify(imageHashes),
+        grade || "",
+        estimated_harvest_date || new Date().toISOString().split("T")[0],
       );
-      // NOTE: If you updated Chaincode to accept string[], pass: ...imageHashes
-      // If Chaincode expects a single string arg, use: JSON.stringify(imageHashes)
 
       await close();
       blockchainStatus = "Success";
+      console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id}`);
     } catch (bcError) {
       console.error("Blockchain Failed:", bcError);
       blockchainStatus = "Failed";
@@ -232,6 +234,7 @@ const updateStock = async (req, res) => {
 
       await close();
       blockchainStatus = "Success";
+      console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId}`);
     } catch (bcError) {
       console.error("Blockchain Update Failed:", bcError);
       blockchainStatus = "Failed";
@@ -249,4 +252,36 @@ const updateStock = async (req, res) => {
   }
 };
 
-module.exports = { submitPredictStock, getStockById, updateStock };
+// GET /api/farmer/estimated-stocks  – list all harvests owned by the logged-in farmer
+const getEstimatedStocks = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // Optional query params for filtering
+    const { status, fruit_type, grade } = req.query;
+
+    let query = supabase
+      .from("estimated_stock")
+      .select(
+        "id, fruit_type, variant, quantity, grade, estimated_harvest_date, price_per_kg, image_url, status, created_at",
+      )
+      .eq("farmer_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (status) query = query.eq("status", status);
+    if (fruit_type) query = query.ilike("fruit_type", `%${fruit_type}%`);
+    if (grade) query = query.eq("grade", grade);
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(error.message);
+
+    return res.status(200).json({ success: true, stocks: data });
+  } catch (err) {
+    console.error("GetEstimatedStocks Error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+module.exports = { submitPredictStock, getStockById, updateStock, getEstimatedStocks };

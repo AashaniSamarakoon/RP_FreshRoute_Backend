@@ -622,12 +622,10 @@ exports.updateLocation = async (req, res) => {
 
     // GRACEFUL HANDLING: Prevent background location interval from throwing 404s
     if (tError || !transporterEntry || !transporterEntry.vehicle_id) {
-      return res
-        .status(200)
-        .json({
-          success: false,
-          message: "Location ping ignored: No vehicle assigned.",
-        });
+      return res.status(200).json({
+        success: false,
+        message: "Location ping ignored: No vehicle assigned.",
+      });
     }
 
     const vehicleId = transporterEntry.vehicle_id;
@@ -669,13 +667,11 @@ exports.getVehicleDetails = async (req, res) => {
 
     // GRACEFUL HANDLING: Return 200 with null data
     if (tError || !transporterEntry || !transporterEntry.vehicle_id) {
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: null,
-          message: "No vehicle assigned to this user.",
-        });
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: "No vehicle assigned to this user.",
+      });
     }
 
     const vehicleId = transporterEntry.vehicle_id;

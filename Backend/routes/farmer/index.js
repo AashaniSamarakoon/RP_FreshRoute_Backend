@@ -18,6 +18,19 @@ const {
   updateSMSPreferences,
 } = require("../../controllers/farmer/smsController");
 const {
+  getEstimatedStocks,
+} = require("../../controllers/farmer/predictStockController");
+const {
+  getBatchHistory,
+  getVerificationStatus,
+} = require("../../controllers/farmer/blockchainController");
+const {
+  updateOrderStatusPacking,
+  updateOrderStatusReady,
+  getFarmerOrders,
+  getFarmerOrderById,
+} = require("../../controllers/farmer/farmerOrderController");
+const {
   getNotifications: getNotificationsNew,
   getNotificationById,
   markAsRead,
@@ -56,6 +69,27 @@ router.delete("/notifications/:id", deleteNotification);
 // Legacy notification endpoints (kept for backward compatibility)
 router.get("/old-notifications", getNotifications);
 router.patch("/old-notifications/:id/read", markNotificationRead);
+
+// Estimated stocks (harvests) for the logged-in farmer
+router.get("/estimated-stocks", getEstimatedStocks);
+
+// Blockchain – per-stock history & verification (farmer-scoped)
+router.get("/blockchain/history/:stockId", getBatchHistory);
+router.get("/blockchain/verify/:stockId", getVerificationStatus);
+
+// Order lifecycle status updates (farmer-side)
+// The `packing` step has been removed; the PATCH below now handles both
+// AUTHORIZED_PAYMENT (legacy) and PACKING statuses.
+router.patch("/orders/:orderId/ready",   updateOrderStatusReady);
+
+// kept for compatibility, forwards to ready
+router.patch("/orders/:orderId/packing", updateOrderStatusPacking);
+
+// GET single order by id (farmer must be assigned to it)
+router.get("/orders/:orderId", getFarmerOrderById);
+
+// GET orders assigned to this farmer (only after matching)
+router.get("/orders", getFarmerOrders);
 
 // Feedback
 router.get("/feedback", getFeedback);

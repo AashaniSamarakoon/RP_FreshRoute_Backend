@@ -1,4 +1,4 @@
-const { supabase } = require("../../utils/supabaseClient");
+const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 
 /**
  * Manual payment release endpoint (for admin use)
@@ -16,7 +16,7 @@ const releasePayment = async (req, res) => {
     // Get payment details
     const { data: payment, error: fetchError } = await supabase
       .from("payments")
-      .select("id, order_id, status, amount, slip_verification_status")
+      .select("id, order_id, status, amount")
       .eq("order_id", orderId)
       .single();
 
@@ -26,20 +26,13 @@ const releasePayment = async (req, res) => {
         .json({ message: "Payment not found for this order" });
     }
 
-    // Verify payment is authorized (slip auto-approved by OCR)
+    // Verify payment is in a releasable state
     if (
       payment.status !== "AUTHORIZED" &&
       payment.status !== "PENDING_RELEASE"
     ) {
       return res.status(400).json({
         message: `Cannot release payment with status: ${payment.status}. Must be AUTHORIZED or PENDING_RELEASE.`,
-      });
-    }
-
-    // Verify slip was auto-approved (no manual approval in system)
-    if (payment.slip_verification_status !== "AUTO_APPROVED") {
-      return res.status(400).json({
-        message: `Cannot release payment. Slip verification status: ${payment.slip_verification_status}. Must be AUTO_APPROVED.`,
       });
     }
 
@@ -113,10 +106,6 @@ const getPaymentStatus = async (req, res) => {
       currency: payment.currency,
       status: payment.status,
       paymentMethod: payment.payment_method,
-      slipVerificationStatus: payment.slip_verification_status,
-      slipUrl: payment.payment_slip_url,
-      uploadedAt: payment.slip_uploaded_at,
-      verifiedAt: payment.slip_verified_at,
       authorizedAt: payment.authorized_at,
       releasedAt: payment.released_at,
       qualityConfirmedAt: payment.quality_confirmed_at,

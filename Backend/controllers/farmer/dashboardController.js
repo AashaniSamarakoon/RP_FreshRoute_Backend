@@ -1,7 +1,11 @@
 const farmerDashboard = async (req, res) => {
-  // TODO: replace with real farmer data later
+  // Build user name from req.user
+  const userName = req.user.first_name 
+    ? `${req.user.first_name} ${req.user.last_name || ''}`.trim()
+    : 'Farmer';
+  
   res.json({
-    message: `Welcome, farmer ${req.user.name}`,
+    message: `Welcome, ${userName}`,
     upcomingPickups: [],
     stats: {
       totalShipments: 0,

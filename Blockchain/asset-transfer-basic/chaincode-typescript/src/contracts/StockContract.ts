@@ -7,18 +7,20 @@ export class StockContract extends BaseContract {
     // --- 1. CREATE: Accepts Array of Hashes as JSON string ---
     @Transaction()
     async CreateHarvest(
-        ctx: Context, 
-        harvestId: string, 
-        fruitId: string, 
-        quantity: string, 
+        ctx: Context,
+        harvestId: string,
+        fruitId: string,
+        quantity: string,
         pricePerUnit: string,
-        imageHashesJson: string // JSON string of array, e.g. '["hash1","hash2"]'
+        imageHashesJson: string, // JSON string of array, e.g. '["hash1","hash2"]'
+        grade: string,           // e.g. 'A' | 'B' | 'C' — pass '' if unknown
+        harvestDate: string      // ISO date e.g. '2026-03-07' — pass '' if unknown
     ): Promise<void> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can create harvests');
 
         const txTimestamp = ctx.stub.getTxTimestamp();
-        const createdAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        const createdAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         // Parse the JSON string to array
         let imageHashes: string[] = [];
@@ -38,6 +40,8 @@ export class StockContract extends BaseContract {
             pricePerUnit: parseFloat(pricePerUnit),
             status: 'FRESH',
             imageHashes: imageHashes, // <--- Storing multiple proofs
+            grade: grade || '',
+            harvestDate: harvestDate || '',
             createdAt: createdAt
         };
 
@@ -54,16 +58,18 @@ export class StockContract extends BaseContract {
     // --- 2. UPDATE: Accepts Array of Hashes as JSON string ---
     @Transaction()
     async UpdateHarvest(
-        ctx: Context, 
-        harvestId: string, 
-        newQuantity: string, 
-        newPrice: string, 
+        ctx: Context,
+        harvestId: string,
+        newQuantity: string,
+        newPrice: string,
         status: string,
-        newImageHashesJson: string // JSON string of array
+        newImageHashesJson: string, // JSON string of array
+        grade: string,              // pass '' to keep existing
+        harvestDate: string         // pass '' to keep existing
     ): Promise<void> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
-        
+
         const harvest = JSON.parse(data.toString());
         const client = this.getClient(ctx);
 
@@ -73,7 +79,7 @@ export class StockContract extends BaseContract {
         harvest.availableQuantity = parseInt(newQuantity);
         harvest.pricePerUnit = parseFloat(newPrice);
         harvest.status = status;
-        
+
         // Parse and update hashes if valid JSON array is sent
         try {
             const newImageHashes = JSON.parse(newImageHashesJson || '[]');
@@ -83,9 +89,12 @@ export class StockContract extends BaseContract {
         } catch (e) {
             // Keep existing hashes if parsing fails
         }
-        
+
+        if (grade) harvest.grade = grade;
+        if (harvestDate) harvest.harvestDate = harvestDate;
+
         const txTimestamp = ctx.stub.getTxTimestamp();
-        harvest.updatedAt = new Date(txTimestamp.seconds.toNumber() * 1000).toISOString();
+        harvest.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         await ctx.stub.putState(harvestId, Buffer.from(JSON.stringify(harvest)));
     }
@@ -94,7 +103,7 @@ export class StockContract extends BaseContract {
     async DeleteHarvest(ctx: Context, harvestId: string): Promise<void> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
-        
+
         const harvest = JSON.parse(data.toString());
         const client = this.getClient(ctx);
 
@@ -104,13 +113,13 @@ export class StockContract extends BaseContract {
     }
 
     // --- QUERY FUNCTIONS FOR DASHBOARD ---
-    
+
     @Transaction(false)
     async GetAllHarvests(ctx: Context): Promise<string> {
         const allResults = [];
         const iterator = await ctx.stub.getStateByRange('', '');
         let result = await iterator.next();
-        
+
         while (!result.done) {
             const strValue = Buffer.from(result.value.value.toString()).toString('utf8');
             let record;
@@ -167,7 +176,7 @@ export class StockContract extends BaseContract {
             const timestamp = result.value.timestamp;
             const record = {
                 txId: result.value.txId,
-                timestamp: timestamp ? new Date(timestamp.seconds.toNumber() * 1000).toISOString() : null,
+                timestamp: timestamp ? new Date(Number(timestamp.seconds) * 1000).toISOString() : null,
                 isDelete: result.value.isDelete,
                 value: Buffer.from(result.value.value.toString()).toString('utf8')
             };

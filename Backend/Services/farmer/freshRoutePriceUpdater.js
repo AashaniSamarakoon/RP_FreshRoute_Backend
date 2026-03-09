@@ -131,12 +131,18 @@ async function updateFreshRoutePricesOnEconomicChange(fruitId, fruitName) {
 
     // Step 6: Send SMS to farmers about price update
     try {
+      console.log(`[FreshRoute SMS] Querying farmers for ${fruitName} price update SMS...`);
       const { data: farmers, error: farmersErr } = await supabase
         .from("users")
-        .select("id, name, phone")
-        .eq("role", "farmer")
+        .select("id, first_name, last_name, phone")
+        .eq("role", "FARMER")
         .eq("sms_alerts_enabled", true)
         .not("phone", "is", null);
+
+      console.log(`[FreshRoute SMS] Query result: ${farmers?.length || 0} farmers, Error: ${farmersErr?.message || 'none'}`);
+      if (farmers && farmers.length > 0) {
+        console.log("[FreshRoute SMS] Sample farmer:", JSON.stringify(farmers[0]));
+      }
 
       if (!farmersErr && farmers && farmers.length > 0) {
         const priceList = gradedPrices
@@ -146,24 +152,27 @@ async function updateFreshRoutePricesOnEconomicChange(fruitId, fruitName) {
         const smsMessage = `💰 FreshRoute Price Update\n\n${fruitName} prices updated for ${today}:\n\n${priceList}\n\nCheck FreshRoute app for details!`;
 
         const smsBatch = farmers.map(f => ({
+          farmer_id: f.id,
           phone: f.phone,
           message: smsMessage,
         }));
 
-        const sendResults = await sendBatchSMS(smsBatch);
+        const sendResults = await sendBatchSMS(smsBatch.map(s => ({ phone: s.phone, message: s.message })));
         
         // Log each SMS send result
         let successCount = 0;
         let failCount = 0;
-        for (let i = 0; i < farmers.length; i++) {
-          const farmer = farmers[i];
+        for (let i = 0; i < smsBatch.length; i++) {
+          const batch = smsBatch[i];
           const result = sendResults[i];
           
           await logSMSSend(
-            farmer.id,
-            farmer.phone,
+            batch.farmer_id,
+            batch.phone,
             result.status === 'fulfilled' ? 'sent' : 'failed',
-            result.status === 'rejected' ? result.result : null
+            result.status === 'rejected' ? result.result : null,
+            'price_update',
+            batch.message
           );
           
           if (result.status === 'fulfilled') {
@@ -283,12 +292,15 @@ async function updateFreshRoutePrices() {
 
         // Send SMS to farmers about price update
         try {
+          console.log(`[FreshRoute Updater] Querying farmers for ${fruit.name} SMS...`);
           const { data: farmers, error: farmersErr } = await supabase
             .from("users")
-            .select("id, name, phone")
-            .eq("role", "farmer")
+            .select("id, first_name, last_name, phone")
+            .eq("role", "FARMER")
             .eq("sms_alerts_enabled", true)
             .not("phone", "is", null);
+          
+          console.log(`[FreshRoute Updater] Farmer query: ${farmers?.length || 0} results, Error: ${farmersErr?.message || 'none'}`);
 
           if (!farmersErr && farmers && farmers.length > 0) {
             const priceList = gradedPrices
@@ -298,24 +310,27 @@ async function updateFreshRoutePrices() {
             const smsMessage = `💰 FreshRoute Price Update\n\n${fruit.name} prices updated for ${today}:\n\n${priceList}\n\nCheck FreshRoute app for details!`;
 
             const smsBatch = farmers.map(f => ({
+              farmer_id: f.id,
               phone: f.phone,
               message: smsMessage,
             }));
 
-            const sendResults = await sendBatchSMS(smsBatch);
+            const sendResults = await sendBatchSMS(smsBatch.map(s => ({ phone: s.phone, message: s.message })));
             
             // Log each SMS send result
             let successCount = 0;
             let failCount = 0;
-            for (let i = 0; i < farmers.length; i++) {
-              const farmer = farmers[i];
+            for (let i = 0; i < smsBatch.length; i++) {
+              const batch = smsBatch[i];
               const result = sendResults[i];
               
               await logSMSSend(
-                farmer.id,
-                farmer.phone,
+                batch.farmer_id,
+                batch.phone,
                 result.status === 'fulfilled' ? 'sent' : 'failed',
-                result.status === 'rejected' ? result.result : null
+                result.status === 'rejected' ? result.result : null,
+                'price_update',
+                batch.message
               );
               
               if (result.status === 'fulfilled') {

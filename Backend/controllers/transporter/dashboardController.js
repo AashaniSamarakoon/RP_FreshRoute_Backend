@@ -1,6 +1,11 @@
 const transporterDashboard = async (req, res) => {
+  // Build user name from req.user
+  const userName = req.user.first_name 
+    ? `${req.user.first_name} ${req.user.last_name || ''}`.trim()
+    : 'Transporter';
+  
   res.json({
-    message: `Welcome, transporter ${req.user.name}`,
+    message: `Welcome, ${userName}`,
     todayJobs: [],
     vehicleStatus: [],
   });

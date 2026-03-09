@@ -6,10 +6,17 @@ This payment system uses PayHere's **Preauthorization (Hold and Release)** featu
 
 ## Payment Flow
 
+There are two supported payment variants:
+
+* **Standard preauth** – buyer pays the full amount at order placement, funds are held and then captured after pickup.
+* **Deposit + tokenisation** (new) – only 50% of the order value is charged up‑front. A customer token is stored which may be used to automatically charge the remaining balance on transporter pickup.
+
+Standard flow:
+
 ```
 1. Buyer places order → Status: OPEN
 2. Farmer accepts proposal → Status: AWAITING_PAYMENT
-3. Buyer initiates payment → PayHere preauthorization
+3. Buyer initiates payment → PayHere preauthorization (full amount)
 4. PayHere holds money → Status: AUTHORIZED (money held, not transferred)
 5. Transporter arrives at farm → Inspects produce quality
 6. Transporter confirms quality → Quality verified BEFORE pickup
@@ -17,6 +24,25 @@ This payment system uses PayHere's **Preauthorization (Hold and Release)** featu
 8. Backend calls PayHere Capture API → Money released to farmer
 9. Transporter delivers goods → Status: DELIVERED
 10. Order complete → Status: COMPLETED, Payment: RELEASED
+```
+
+Deposit/tokenisation flow:
+
+```
+1. Buyer places order → Status: OPEN
+2. Farmer accepts proposal → Status: AWAITING_PAYMENT
+3. Buyer initiates payment → PayHere checkout with `preapprove=true` *and* `depositor_amount` 50% of total
+4. PayHere charges 50% and returns a `customer_token` in the webhook
+5. Backend stores token and deposit amount on `placed_orders`
+6. Transporter arrives at farm, quality is checked
+7. When transporter confirms pickup the backend:
+   a. Looks up market price for exact pickup date
+   b. Calculates final bill (market price × qty + fees)
+   c. Computes remaining balance = final bill - deposit
+   d. Hits PayHere S2S `/pay/checkout` endpoint with `customer_token` to charge remaining amount
+8. If capture succeeds the order status is set to **COMPLETED** and final receipt logged.
+   If capture fails the order becomes `PAYMENT_FAILED` and buyer is notified to re‑authorize their card.
+9. Once goods are delivered the order still transitions to `DELIVERED` for tracking clarity.
 ```
 
 ## PayHere API Features Used

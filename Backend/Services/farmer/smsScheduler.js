@@ -74,7 +74,9 @@ async function sendMorningForecastSMS() {
         batch.farmer_id,
         batch.phone,
         result.status === "fulfilled" ? "sent" : "failed",
-        result.status === "rejected" ? result.result : null
+        result.status === "rejected" ? result.result : null,
+        "forecast",
+        batch.message
       );
 
       if (result.status === "fulfilled") {

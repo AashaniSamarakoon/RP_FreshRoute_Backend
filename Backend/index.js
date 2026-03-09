@@ -14,6 +14,7 @@ const {
 const {
   runBatchMatching,
   markExpiredOrders,
+  releaseMatchedStockForExpiredPayments,
 } = require("./Services/matchingService");
 const {
   startSMSScheduler,
@@ -39,20 +40,33 @@ const forecastRouter = require("./routes/common/forecastRoutes");
 const predictStockRoutes = require("./routes/farmer/predictStockRoutes");
 const orderRoutes = require("./routes/buyer/orderRoutes");
 const matchingRoutes = require("./routes/buyer/matchingRoutes");
+const buyerGradingRoutes = require("./routes/buyer/gradingRoutes");
 const farmerDashboardRoutes = require("./routes/farmer/dashboardRoutes");
 const transporterDashboardRoutes = require("./routes/transporter/dashboardRoutes");
 const buyerDashboardRoutes = require("./routes/buyer/dashboardRoutes");
 const farmerProposalRoutes = require("./routes/farmer/proposalRoutes");
 const farmerRoutes = require("./routes/farmer");
 const trustRoutes = require("./routes/common/trustRoutes");
+const fruitGradingRoutes = require("./routes/common/fruitGradingRoutes");
+const fruitClassificationRoutes = require("./routes/common/fruitClassificationRoutes");
+const gradingRoutes = require("./routes/transporter/gradingRoutes");
+const fruitGradingService = require("./Services/fruitGrading/fruitGradingService");
+const fruitClassificationService = require("./Services/fruitGrading/fruitClassificationService");
+const multer = require("multer");
 const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
 const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
 
 const alertRoutes = require("./routes/alertRoutes");
 const accuracyRoutes = require("./routes/farmer/accuracyRoutes");
+const publicRoutes = require("./routes/common/publicRoutes");
 const blockchainDashboardRoutes = require("./routes/dashboard/dashboardRoutes");
-const paymentSlipRoutes = require("./routes/buyer/paymentSlipRoutes");
 const paymentRoutes = require("./routes/buyer/paymentRoutes");
+const complaintRoutes = require("./routes/buyer/complaintRoutes");
+const adminComplaintRoutes = require("./routes/admin/complaintRoutes");
+const adminGradingRoutes = require("./routes/admin/gradingRoutes");
+const adminTempsRoutes = require("./routes/admin/tempsRoutes");
+const payhereRoutes = require("./routes/payhereRoutes");
+const { runDailyAutoCharge } = require("./Services/payhereChargeService");
 const deliveryRoutes = require("./routes/transporter/deliveryRoutes");
 const app = express();
 app.use(cors());
@@ -78,6 +92,11 @@ app.use((req, res, next) => {
   };
 
   next();
+});
+
+// Root endpoint
+app.get("/", (req, res) => {
+  res.send("FreshRoute API is running securely via Cloudflare!");
 });
 
 // Health check endpoint
@@ -119,6 +138,14 @@ app.use(
   transporterRoutes,
 );
 
+// Grading routes (transporter role required)
+app.use(
+  "/api/gradings",
+  authMiddleware,
+  requireRole("transporter"),
+  gradingRoutes
+);
+
 // Farmer routes (forecast, notifications, SMS, etc.)
 app.use("/api/farmer", authMiddleware, requireRole("farmer"), farmerRoutes);
 
@@ -137,12 +164,20 @@ app.use(
 // Farmer proposals (view/accept/reject buyer requests)
 app.use("/api/farmer/proposals", farmerProposalRoutes);
 
-// Buyer place order
+// Buyer place order (admin can also access e.g. order details)
 app.use(
   "/api/buyer/place-order",
   authMiddleware,
-  requireRole("buyer"),
+  requireRole("buyer", "admin"),
   orderRoutes,
+);
+
+// Buyer grading routes (get grading images)
+app.use(
+  "/api/buyer/gradings",
+  authMiddleware,
+  requireRole("buyer"),
+  buyerGradingRoutes
 );
 
 // Buyer matching (view/trigger proposals from matching algorithm)
@@ -154,18 +189,51 @@ app.use("/api/prices/freshroute", authMiddleware, freshRoutePricesRouter);
 // shared forecast endpoint (allows any authenticated user) mounted at fixed path
 app.use("/api/forecast", authMiddleware, forecastRouter);
 
+// Public Transparency Portal — no auth middleware, rate-limited at route level
+app.use("/api/public", publicRoutes);
+
 // Auth routes
 app.use("/api/auth", authRoutes);
 app.use("/api/trust", trustRoutes);
 
+// Fruit Grading Routes (buyer or transporter role required)
+app.use(
+  "/api/fruit-grading",
+  authMiddleware,
+  requireRole("buyer", "transporter"),
+  fruitGradingRoutes
+);
+
+// Fruit classification only - separate endpoint (buyer or transporter)
+app.use(
+  "/api/fruit-classification",
+  authMiddleware,
+  requireRole("buyer", "transporter"),
+  fruitClassificationRoutes
+);
+
 // Alert routes (for notifications and SMS)
 app.use("/api/alerts", alertRoutes);
 
-// Payment slip routes (Bank slip upload & verification - Fully Automated)
-app.use("/api/buyer/payment-slip", paymentSlipRoutes);
-
 // Payment status and release routes
 app.use("/api/buyer/payment", paymentRoutes);
+
+// Buyer complaints (create, list by user, get by id, add comment)
+app.use("/api/buyer/complaints", complaintRoutes);
+
+// Admin complaints (list all or by user_id, get comments, get by id, update/add admin comment)
+app.use("/api/admin/complaints", adminComplaintRoutes);
+// Admin gradings (all gradings + by orderId, verify grading; same as buyer re-verification)
+app.use("/api/admin/gradings", adminGradingRoutes);
+// Admin temps (get temp alerts by placed_order_id via orders table)
+app.use("/api/admin/temps", adminTempsRoutes);
+
+// PayHere IPN notification endpoint (no auth — called by PayHere server)
+app.use("/api/payhere", payhereRoutes);
+
+// Note: the old public form redirect path has been retired; payments now
+// originate via the mobile SDK, so there's no need to mount the router at
+// "/payhere" without the /api prefix.
 
 // Transporter delivery routes (quality check, pickup, delivery confirmation)
 app.use("/api/transporter/delivery", deliveryRoutes);
@@ -182,6 +250,41 @@ app.use(
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
 app.use("/api/transporter/dashboard", transporterDashboardRoutes);
 app.use("/api/buyer/dashboard", buyerDashboardRoutes);
+
+// Error handler for multer errors (must be after all routes)
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "File too large. Maximum size is 10MB per file.",
+      });
+    }
+    if (error.code === "LIMIT_FILE_COUNT") {
+      return res.status(400).json({
+        success: false,
+        message: "Too many files. Maximum 5 files allowed.",
+      });
+    }
+    if (error.code === "LIMIT_FIELD_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "Field too large. Maximum size is 50MB per field.",
+      });
+    }
+    return res.status(400).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+  if (error) {
+    return res.status(400).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+  next();
+});
 
 // Blockchain Dashboard routes (NEW - business-first, role-based)
 app.use("/api/dashboard", authMiddleware, blockchainDashboardRoutes);
@@ -200,11 +303,41 @@ app.use(
   telemetryRoutes,
 );
 
+// Error handler for JSON parsing issues (must be after all routes)
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.warn("⚠️ Invalid JSON in body (e.g., 'null' string from frontend)");
+    return res.status(400).json({ error: "Invalid JSON in request body" });
+  }
+  next(err);
+});
+
 // ---------- START SERVER ----------
 const port = process.env.PORT || 4000;
-const server = app.listen(port, "0.0.0.0", () => {
-  console.log(`FreshRoute backend running on port ${port}`);
-  console.log(`Available at: http://0.0.0.0:${port}`);
+
+// Load ONNX models on startup
+async function startServer() {
+  try {
+    console.log("Loading fruit classification model...");
+    await fruitClassificationService.loadModel();
+    console.log("✅ Fruit classification model loaded successfully");
+  } catch (error) {
+    console.error("⚠️  Warning: Failed to load fruit classification model:", error.message);
+    console.error("   Fruit classification endpoints will not be available.");
+  }
+
+  try {
+    console.log("Loading fruit grading model...");
+    await fruitGradingService.loadModel();
+    console.log("✅ Fruit grading model loaded successfully");
+  } catch (error) {
+    console.error("⚠️  Warning: Failed to load fruit grading model:", error.message);
+    console.error("   Fruit grading endpoints will not be available.");
+  }
+
+  const server = app.listen(port, "0.0.0.0", () => {
+    console.log(`FreshRoute backend running on port ${port}`);
+    console.log(`Available at: http://0.0.0.0:${port}`);
 
   // Start SMS scheduler and Dambulla scraper
   try {
@@ -237,18 +370,22 @@ process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
   process.exit(1);
 });
+}
+
+startServer();
 
 // ---------- SCHEDULED JOBS ----------
 // Run batch matching every 2 hours (at minute 0)
-cron.schedule("0 */2 * * *", async () => {
-  console.log("[Cron] Running scheduled batch matching...");
+cron.schedule("*/30 * * * *", async () => {  console.log("[Cron] Running scheduled batch matching...");
   await runBatchMatching();
 });
 
-// Mark expired orders daily at midnight
+// Mark expired orders and release stale MATCHED stock daily at midnight
 cron.schedule("0 0 * * *", async () => {
   console.log("[Cron] Checking for expired orders...");
   await markExpiredOrders();
+  // Bug 4 fix: release stock locked as MATCHED when buyer never pays within 48h
+  await releaseMatchedStockForExpiredPayments();
 });
 
 console.log(
@@ -301,6 +438,16 @@ console.log(
     console.warn("[Init] Warning triggering daily forecast SMS:", err.message);
   }
 })();
+
+// PayHere auto-charge: charge pre-approved orders due today, daily at 8:00 AM
+cron.schedule("0 8 * * *", async () => {
+  console.log("[Cron] Running PayHere daily auto-charge...");
+  try {
+    await runDailyAutoCharge();
+  } catch (err) {
+    console.error("[Cron] PayHere auto-charge failed:", err.message);
+  }
+});
 
 // Update FreshRoute prices daily at 6:00 AM
 cron.schedule("0 6 * * *", async () => {
