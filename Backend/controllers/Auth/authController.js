@@ -61,7 +61,7 @@ const signup = async (req, res) => {
           ? "buyers"
           : normalizedRole === "FARMER"
           ? "farmers"
-          : "transporters";
+          : "transporter";
 
       const { data, error } = await supabaseAdmin
         .from(table)
@@ -207,8 +207,9 @@ const login = async (req, res) => {
       }
       roleProfile = buyerData;
     } else if (userRole === "transporter") {
+      // table name is singular 'transporter' elsewhere in code
       const { data: transporterData, error: transporterError } = await supabase
-        .from("transporters")
+        .from("transporter")
         .select("*")
         .eq("user_id", userId)
         .single();

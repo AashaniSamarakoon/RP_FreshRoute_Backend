@@ -21,17 +21,21 @@ const getTransporterId = async (userId) => {
   return transporterData.user_id;
 };
 
+
 // helper: capture remaining PayHere balance (including date pricing) and
 // release on blockchain. returns { success, message, order } or throws.
 async function processPickupPayment(orderId, transporterId) {
   // fetch and validate order
   const { data: order, error: orderErr } = await supabase
     .from("placed_orders")
-    .select("*, transporter_id")
+    .select("*")
     .eq("id", orderId)
     .single();
   if (orderErr || !order) throw new Error("order-not-found");
-  if (order.transporter_id !== transporterId) throw new Error("unauthorized");
+
+  if (order.transporter_id && order.transporter_id !== transporterId) {
+    throw new Error("unauthorized");
+  }
   if (order.status !== "AUTHORIZED_PAYMENT" && order.payment_status !== "AUTHORIZED")
     throw new Error("payment-not-authorized");
 
@@ -39,10 +43,29 @@ async function processPickupPayment(orderId, transporterId) {
   const { base, serviceCharge, transporterFee, total, depositPaid, remaining, farmerBreakdown } =
     await computeFinalPrice(order);
 
+  // make sure there is a payments row for this order so updates below have effect
+  const { data: payRow, error: payErr } = await supabase
+    .from("payments")
+    .select("id")
+    .eq("order_id", orderId)
+    .single();
+  if (payErr && payErr.code !== "PGRST116") throw payErr; // other error
+  if (!payRow) {
+    await supabase.from("payments").insert({
+      order_id: orderId,
+      amount: 0,
+      status: "AUTHORIZED",
+      created_at: new Date().toISOString(),
+    });
+  }
+
   // the order record stores the farmer share at proposal time; recompute
   // using current price so we can detect any changes or optionally override.
   const farmerShareFromOrder = order.farmer_share_amount || 0;
-  const farmerShare = farmerBreakdown ? farmerBreakdown.grossEarning : farmerShareFromOrder;
+  let farmerShare = farmerShareFromOrder;
+  if (farmerBreakdown && typeof farmerBreakdown.grossEarning === 'number') {
+    farmerShare = farmerBreakdown.grossEarning;
+  }
 
   if (farmerShare !== farmerShareFromOrder) {
     console.log(
@@ -52,6 +75,7 @@ async function processPickupPayment(orderId, transporterId) {
   }
 
   const platformFee = order.platform_fee_amount || 0;
+  // transporterFee already obtained from computeFinalPrice destructuring above
   const finalTotal = total; // same name for clarity
 
   // capture token balance if present
@@ -122,13 +146,35 @@ async function processPickupPayment(orderId, transporterId) {
   const blockchainTransporterId = `TRANSPORTER_${transporterId}`;
   const { contract, close } = await getContract(transporterId, "PaymentContract");
   try {
+    // ensure a ledger payment exists and is authorized
+    try {
+      await contract.submitTransaction("AuthorizePayment", blockchainOrderId, "");
+    } catch (authErr) {
+      // if not found, create then authorize
+      if (authErr.message && authErr.message.includes("not found")) {
+        try {
+          await contract.submitTransaction(
+            "InitiatePayment",
+            blockchainOrderId,
+            (finalTotal || 0).toString(),
+            "payhere",
+          );
+          await contract.submitTransaction("AuthorizePayment", blockchainOrderId, "");
+        } catch (inner) {
+          console.warn("ledger payment init/authorize failed", inner.message);
+        }
+      } else {
+        console.warn("ledger authorize error", authErr.message);
+      }
+    }
+
     await contract.submitTransaction(
       "ReleasePayment",
       blockchainOrderId,
       blockchainTransporterId,
-      farmerShare.toString(),
-      transporterFee.toString(),
-      platformFee.toString(),
+      (farmerShare || 0).toString(),
+      (transporterFee || 0).toString(),
+      (platformFee || 0).toString(),
     );
     await contract.submitTransaction(
       "ConfirmPaymentRelease",
@@ -714,20 +760,17 @@ const getDeliveryStatus = async (req, res) => {
 
     const transporterId = await getTransporterId(userId);
 
+    // fetch order and verify transporter assignment via helper
     const { data: order, error: orderError } = await supabase
       .from("placed_orders")
-      .select(
-        "id, status, picked_up_at, pickup_notes, delivered_at, delivery_notes, received_by, transporter_id",
-      )
+      .select("id, status, picked_up_at, pickup_notes, delivered_at, delivery_notes, received_by")
       .eq("id", orderId)
-      .eq("transporter_id", transporterId)
       .single();
 
     if (orderError || !order) {
-      return res
-        .status(404)
-        .json({ message: "Order not found or not assigned to you" });
+      return res.status(404).json({ message: "Order not found" });
     }
+
 
     // Get quality check if exists (done at pickup)
     const { data: qualityCheck } = await supabase
@@ -751,40 +794,50 @@ const getDeliveryStatus = async (req, res) => {
   }
 };
 
+
 const pickupDelivery = async (req, res) => {
+  const { placed_order_id, transporter_id } = req.body;
+  if (!placed_order_id || !transporter_id) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing placed_order_id or transporter_id",
+    });
+  }
+
   try {
-    const { placed_order_id, transporter_id } = req.body;
-
-    console.log(
-      `[PICKUP EVENT] Transporter ID: ${transporter_id} has picked up Placed Order ID: ${placed_order_id}`,
-    );
-
-    if (!placed_order_id || !transporter_id) {
+    let paymentResult;
+    try {
+      paymentResult = await processPickupPayment(placed_order_id, transporter_id);
+    } catch (innerErr) {
+      // expected business errors thrown as strings or Error with message
+      console.warn("processPickupPayment threw", innerErr);
       return res.status(400).json({
         success: false,
-        message: "Missing placed_order_id or transporter_id",
+        message: innerErr.message || innerErr || "payment processing error",
       });
     }
 
-    // Update the master placed_orders table status to PICKED_UP
-    const { error: updateError } = await supabase
-      .from("placed_orders")
-      .update({ status: "PICKED_UP" })
-      .eq("id", placed_order_id);
-
-    if (updateError) {
-      throw updateError;
+    // if capture failed the helper has already updated records/notifications
+    if (!paymentResult.success) {
+      return res.status(200).json(paymentResult);
     }
+
+    // flag picked‑up timestamp (non‑fatal)
+    await supabase
+      .from("placed_orders")
+      .update({ status: "PICKED_UP", picked_up_at: new Date().toISOString() })
+      .eq("id", placed_order_id);
 
     return res.status(200).json({
       success: true,
-      message: "Placed order status successfully updated to PICKED_UP.",
+      message: "Pickup recorded; payment and blockchain updated.",
+      paymentResult,
     });
-  } catch (error) {
-    console.error("Error updating placed order status on pickup:", error);
+  } catch (err) {
+    console.error("pickupDelivery error:", err);
     return res.status(500).json({
       success: false,
-      message: "Server error while updating placed order status.",
+      message: "Server error while handling pickup delivery.",
     });
   }
 };

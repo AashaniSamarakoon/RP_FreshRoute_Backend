@@ -13,6 +13,9 @@ router.put("/jobs/:id/status", transporterController.updateJobStatus);
 
 // financial endpoints
 router.get("/orders/:orderId/price", deliveryController.getFinalPrice);
+// transporters hit this when they actually pick up goods
+router.post("/pickup/delivery", deliveryController.pickupDelivery);
+// legacy endpoint kept for backward compatibility
 router.post("/pickup/charge", deliveryController.processPickupPayment);
 
 module.exports = router;
