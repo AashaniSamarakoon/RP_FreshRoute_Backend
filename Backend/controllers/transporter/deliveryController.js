@@ -2,8 +2,9 @@ const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const axios = require("axios");
 const { fetchUnitPrice } = require("../../utils/pricingUtils");
-const { sendSystemNotification } = require("../../Services/notificationsService");
-
+const {
+  sendSystemNotification,
+} = require("../../Services/notificationsService");
 
 // Helper: Get transporter ID from user ID
 // transporter table only stores user_id so we return that value directly
@@ -71,50 +72,57 @@ const confirmDelivery = async (req, res) => {
 
     // Sync status with core orders table
     const { data: mainOrder, error: mainOrderError } = await supabase
-       .from("orders")
-       .update({
-           status: "delivered", // lowercase per general convention in orders table
-           updated_at: new Date().toISOString()
-       })
-       .eq("placed_order_id", orderId)
-       .select("assigned_job_id")
-       .single();
+      .from("orders")
+      .update({
+        status: "delivered", // lowercase per general convention in orders table
+        updated_at: new Date().toISOString(),
+      })
+      .eq("placed_order_id", orderId)
+      .select("assigned_job_id")
+      .single();
 
     if (!mainOrderError && mainOrder && mainOrder.assigned_job_id) {
-       // Update Route Manifest to mark this drop as completed
-       const { data: jobData } = await supabase
-          .from("transport_jobs")
-          .select("route_manifest")
-          .eq("id", mainOrder.assigned_job_id)
-          .single();
-          
-       if (jobData && jobData.route_manifest) {
-          const updatedManifest = jobData.route_manifest.map(stop => {
-             if (stop.order_id === mainOrder.id && stop.type === 'DROP') {
-                return { ...stop, completed: true, completed_at: new Date().toISOString() };
-             }
-             return stop;
-          });
-          
-          await supabase
-             .from("transport_jobs")
-             .update({ route_manifest: updatedManifest })
-             .eq("id", mainOrder.assigned_job_id);
-       }
+      // Update Route Manifest to mark this drop as completed
+      const { data: jobData } = await supabase
+        .from("transport_jobs")
+        .select("route_manifest")
+        .eq("id", mainOrder.assigned_job_id)
+        .single();
 
-       // Check if all orders on this job are delivered to close the job
-       const { data: jobOrders } = await supabase
-          .from("orders")
-          .select("status")
-          .eq("assigned_job_id", mainOrder.assigned_job_id);
-       
-       const allDelivered = jobOrders?.every(o => o.status === 'delivered');
-       if (allDelivered) {
-          await supabase
-             .from("transport_jobs")
-             .update({ status: "COMPLETED", completed_at: new Date().toISOString() })
-             .eq("id", mainOrder.assigned_job_id);
-       }
+      if (jobData && jobData.route_manifest) {
+        const updatedManifest = jobData.route_manifest.map((stop) => {
+          if (stop.order_id === mainOrder.id && stop.type === "DROP") {
+            return {
+              ...stop,
+              completed: true,
+              completed_at: new Date().toISOString(),
+            };
+          }
+          return stop;
+        });
+
+        await supabase
+          .from("transport_jobs")
+          .update({ route_manifest: updatedManifest })
+          .eq("id", mainOrder.assigned_job_id);
+      }
+
+      // Check if all orders on this job are delivered to close the job
+      const { data: jobOrders } = await supabase
+        .from("orders")
+        .select("status")
+        .eq("assigned_job_id", mainOrder.assigned_job_id);
+
+      const allDelivered = jobOrders?.every((o) => o.status === "delivered");
+      if (allDelivered) {
+        await supabase
+          .from("transport_jobs")
+          .update({
+            status: "COMPLETED",
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", mainOrder.assigned_job_id);
+      }
     }
 
     return res.status(200).json({
@@ -190,33 +198,47 @@ const confirmQualityAndPickup = async (req, res) => {
     }
 
     // Read price breakdown from order (persisted at proposal acceptance)
-    const farmerShare    = order.farmer_share_amount    || 0;
+    const farmerShare = order.farmer_share_amount || 0;
     const transporterFee = order.transporter_fee_amount || 0;
-    const platformFee    = order.platform_fee_amount    || 0;
+    const platformFee = order.platform_fee_amount || 0;
 
     // Quality failure path — refund buyer, do not release to farmer
-    const qualityFailed = stockCondition === "POOR" || parseFloat(qualityScore) < 2.0;
+    const qualityFailed =
+      stockCondition === "POOR" || parseFloat(qualityScore) < 2.0;
     if (qualityFailed) {
       try {
-        const { contract, close } = await getContract(userId, "PaymentContract");
-        await contract.submitTransaction("RefundPayment", `ORDER_${orderId}`, "Poor quality at pickup");
+        const { contract, close } = await getContract(
+          userId,
+          "PaymentContract",
+        );
+        await contract.submitTransaction(
+          "RefundPayment",
+          `ORDER_${orderId}`,
+          "Poor quality at pickup",
+        );
         await close();
       } catch (bcErr) {
         console.error("[Blockchain] RefundPayment failed:", bcErr.message);
       }
 
-      await supabase.from("placed_orders").update({
-        status: "QUALITY_FAILED",
-        payment_status: "REFUND_PENDING",
-        quality_confirmed_at: new Date().toISOString(),
-        pickup_notes: pickupNotes,
-        updated_at: new Date().toISOString(),
-      }).eq("id", orderId);
+      await supabase
+        .from("placed_orders")
+        .update({
+          status: "QUALITY_FAILED",
+          payment_status: "REFUND_PENDING",
+          quality_confirmed_at: new Date().toISOString(),
+          pickup_notes: pickupNotes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId);
 
-      await supabase.from("payments").update({
-        status: "REFUND_PENDING",
-        updated_at: new Date().toISOString(),
-      }).eq("order_id", orderId);
+      await supabase
+        .from("payments")
+        .update({
+          status: "REFUND_PENDING",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("order_id", orderId);
 
       return res.status(200).json({
         success: true,
@@ -233,7 +255,8 @@ const confirmQualityAndPickup = async (req, res) => {
     let captureSucceeded = true;
     if (order.payhere_customer_token) {
       // compute the remaining amount based on current market price for the pickup date
-      const useDate = order.required_date || new Date().toISOString().split("T")[0];
+      const useDate =
+        order.required_date || new Date().toISOString().split("T")[0];
       const unitPrice = await fetchUnitPrice(
         order.fruit_type,
         order.variant,
@@ -242,7 +265,8 @@ const confirmQualityAndPickup = async (req, res) => {
       );
       const base = (unitPrice || 0) * (order.quantity || 0);
       const serviceCharge = base * 0.01; // 1% service fee
-      const finalTotal = base + serviceCharge + (order.transporter_fee_amount || 0);
+      const finalTotal =
+        base + serviceCharge + (order.transporter_fee_amount || 0);
       const depositPaid = parseFloat(order.deposit_paid || 0);
       const remaining = finalTotal - depositPaid;
 
@@ -282,7 +306,10 @@ const confirmQualityAndPickup = async (req, res) => {
           console.log("[PayHere] Final charge succeeded");
           captureSucceeded = true;
         } catch (err) {
-          console.error("[PayHere] Automatic final charge failed:", err.message);
+          console.error(
+            "[PayHere] Automatic final charge failed:",
+            err.message,
+          );
           captureSucceeded = false;
           await supabase
             .from("placed_orders")
@@ -369,7 +396,9 @@ const confirmQualityAndPickup = async (req, res) => {
 
     // Update order status depending on whether we already charged final balance
     const newOrderStatus =
-      captureSucceeded && order.payhere_customer_token ? "COMPLETED" : "IN_TRANSIT";
+      captureSucceeded && order.payhere_customer_token
+        ? "COMPLETED"
+        : "IN_TRANSIT";
     await supabase
       .from("placed_orders")
       .update({
@@ -384,43 +413,47 @@ const confirmQualityAndPickup = async (req, res) => {
 
     // Sync status with core orders table
     const { data: mainOrder, error: mainOrderErr } = await supabase
-       .from("orders")
-       .update({
-           status: "in_transit",
-           updated_at: new Date().toISOString()
-       })
-       .eq("placed_order_id", orderId)
-       .select("assigned_job_id")
-       .single();
+      .from("orders")
+      .update({
+        status: "in_transit",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("placed_order_id", orderId)
+      .select("assigned_job_id")
+      .single();
 
     if (!mainOrderErr && mainOrder && mainOrder.assigned_job_id) {
-        // Mark job as in progress if this is the first pickup
+      // Mark job as in progress if this is the first pickup
+      await supabase
+        .from("transport_jobs")
+        .update({ status: "IN_PROGRESS" })
+        .eq("id", mainOrder.assigned_job_id)
+        .eq("status", "SCHEDULED"); // Only update if it's currently scheduled
+
+      // Update Route Manifest to mark this pickup as completed
+      const { data: jobData } = await supabase
+        .from("transport_jobs")
+        .select("route_manifest")
+        .eq("id", mainOrder.assigned_job_id)
+        .single();
+
+      if (jobData && jobData.route_manifest) {
+        const updatedManifest = jobData.route_manifest.map((stop) => {
+          if (stop.order_id === mainOrder.id && stop.type === "PICKUP") {
+            return {
+              ...stop,
+              completed: true,
+              completed_at: new Date().toISOString(),
+            };
+          }
+          return stop;
+        });
+
         await supabase
-           .from("transport_jobs")
-           .update({ status: "IN_PROGRESS" })
-           .eq("id", mainOrder.assigned_job_id)
-           .eq("status", "SCHEDULED"); // Only update if it's currently scheduled
-           
-        // Update Route Manifest to mark this pickup as completed
-        const { data: jobData } = await supabase
-           .from("transport_jobs")
-           .select("route_manifest")
-           .eq("id", mainOrder.assigned_job_id)
-           .single();
-           
-        if (jobData && jobData.route_manifest) {
-           const updatedManifest = jobData.route_manifest.map(stop => {
-              if (stop.order_id === mainOrder.id && stop.type === 'PICKUP') {
-                 return { ...stop, completed: true, completed_at: new Date().toISOString() };
-              }
-              return stop;
-           });
-           
-           await supabase
-              .from("transport_jobs")
-              .update({ route_manifest: updatedManifest })
-              .eq("id", mainOrder.assigned_job_id);
-        }
+          .from("transport_jobs")
+          .update({ route_manifest: updatedManifest })
+          .eq("id", mainOrder.assigned_job_id);
+      }
     }
 
     // Record blockchain confirmation of payment release
@@ -456,7 +489,9 @@ const confirmQualityAndPickup = async (req, res) => {
         orderId: orderId,
         qualityScore: qualityScore,
         orderStatus:
-          captureSucceeded && order.payhere_customer_token ? "COMPLETED" : "IN_TRANSIT",
+          captureSucceeded && order.payhere_customer_token
+            ? "COMPLETED"
+            : "IN_TRANSIT",
         paymentStatus: "RELEASED",
         pickedUpAt: new Date().toISOString(),
         note:
@@ -532,8 +567,47 @@ const getDeliveryStatus = async (req, res) => {
   }
 };
 
+const pickupDelivery = async (req, res) => {
+  try {
+    const { placed_order_id, transporter_id } = req.body;
+
+    console.log(
+      `[PICKUP EVENT] Transporter ID: ${transporter_id} has picked up Placed Order ID: ${placed_order_id}`,
+    );
+
+    if (!placed_order_id || !transporter_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing placed_order_id or transporter_id",
+      });
+    }
+
+    // Update the master placed_orders table status to PICKED_UP
+    const { error: updateError } = await supabase
+      .from("placed_orders")
+      .update({ status: "PICKED_UP" })
+      .eq("id", placed_order_id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Placed order status successfully updated to PICKED_UP.",
+    });
+  } catch (error) {
+    console.error("Error updating placed order status on pickup:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while updating placed order status.",
+    });
+  }
+};
+
 module.exports = {
   confirmDelivery,
   confirmQualityAndPickup,
   getDeliveryStatus,
+  pickupDelivery,
 };

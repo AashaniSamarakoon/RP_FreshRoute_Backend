@@ -5,6 +5,7 @@ const {
   confirmDelivery,
   confirmQualityAndPickup,
   getDeliveryStatus,
+  pickupDelivery,
 } = require("../../controllers/transporter/deliveryController");
 
 // All routes require transporter authentication
@@ -24,5 +25,7 @@ router.post("/confirm", confirmDelivery);
 // @desc    Get pickup and delivery status for an order
 // @access  Private (Transporter only)
 router.get("/status/:orderId", getDeliveryStatus);
+
+router.post("/pickup", pickupDelivery);
 
 module.exports = router;
