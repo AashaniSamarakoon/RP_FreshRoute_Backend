@@ -69,10 +69,10 @@ const createComplaint = async (req, res) => {
       return res.status(403).json({ message: "Buyer profile not found" });
     }
 
-    // Verify order exists and belongs to this buyer
+    // Verify order exists and belongs to this buyer; get selected_farmer_id for complaint
     const { data: order, error: orderError } = await supabase
       .from("placed_orders")
-      .select("id, buyer_id")
+      .select("id, buyer_id, selected_farmer_id")
       .eq("id", orderId)
       .eq("buyer_id", buyerData.user_id)
       .single();
@@ -86,7 +86,7 @@ const createComplaint = async (req, res) => {
     // One complaint per order: check if complaint already exists and fetch it for the frontend
     const { data: existing, error: existingError } = await supabase
       .from("complaints")
-      .select("id, order_id, status, user_complaint, comments, image_verification, created_at, updated_at")
+      .select("id, order_id, status, user_complaint, comments, image_verification, farmer_id, created_at, updated_at")
       .eq("order_id", orderId)
       .maybeSingle();
 
@@ -133,6 +133,7 @@ const createComplaint = async (req, res) => {
       comments: commentsValue,
       image_verification: imageVerificationValue,
       images: imagesValue,
+      farmer_id: order.selected_farmer_id || null,
     };
 
     const { error: insertError } = await supabase.from("complaints").insert(row);
@@ -171,7 +172,7 @@ const getComplaintsByUser = async (req, res) => {
 
     const { data: rows, error } = await supabase
       .from("complaints")
-      .select("id, order_id, user_id, user_email, user_name, user_complaint, status, comments, image_verification, comment_thread, created_at, updated_at")
+      .select("id, order_id, user_id, user_email, user_name, user_complaint, status, comments, image_verification, comment_thread, farmer_id, created_at, updated_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
