@@ -76,6 +76,7 @@ const placeOrder = async (req, res) => {
     if (insertError) throw new Error(insertError.message);
 
     // 3a. Optionally record the order on the blockchain via the OrderContract
+    let blockchainTxId = null;
     try {
       const blockchainOrderId = `ORDER_${orderData.id}`;
       const { contract, close } = await getContract(userId, "OrderContract");
@@ -92,6 +93,7 @@ const placeOrder = async (req, res) => {
       await close();
       console.log("[Blockchain] Order placed on ledger", blockchainOrderId, "tx", txId);
       if (txId) {
+        blockchainTxId = txId;
         // append to order record
         const { data: existingOrder } = await supabase
           .from("placed_orders")
@@ -150,6 +152,7 @@ const placeOrder = async (req, res) => {
           : "Order placed. No matches yet - we'll notify you when farmers are available.",
       order: { ...orderData, status: finalStatus, farmerPickup },
       matches: matches,
+      blockchainTxId,
     });
   } catch (err) {
     console.error("PlaceOrder Error:", err);
@@ -208,6 +211,7 @@ const updateOrder = async (req, res) => {
     if (updErr) throw new Error(updErr.message);
 
     // record change on blockchain
+    let blockchainTxId = null;
     try {
       const blockchainOrderId = `ORDER_${orderId}`;
       const { contract, close } = await getContract(userId, "OrderContract");
@@ -219,6 +223,7 @@ const updateOrder = async (req, res) => {
       );
       await close();
       if (txId) {
+        blockchainTxId = txId;
         const { data: ex } = await supabase
           .from("placed_orders")
           .select("blockchain_tx_id")
@@ -235,7 +240,7 @@ const updateOrder = async (req, res) => {
       console.error("Blockchain UpdateOrder failed:", bcErr.message);
     }
 
-    return res.status(200).json({ success: true, message: "Order updated" });
+    return res.status(200).json({ success: true, message: "Order updated", blockchainTxId });
   } catch (err) {
     console.error("UpdateOrder Error:", err);
     return res.status(500).json({ message: err.message });
@@ -280,16 +285,18 @@ const deleteOrder = async (req, res) => {
     if (delErr) throw new Error(delErr.message);
 
     // delete on blockchain
+    let blockchainTxId = null;
     try {
       const { contract, close } = await getContract(userId, "OrderContract");
       const txId = await submitWithTx(contract, "DeleteOrder", `ORDER_${orderId}`);
       await close();
       console.log("[Blockchain] DeleteOrder tx", txId);
+      blockchainTxId = txId;
     } catch (bcErr) {
       console.error("Blockchain DeleteOrder failed:", bcErr.message);
     }
 
-    return res.status(200).json({ success: true, message: "Order deleted" });
+    return res.status(200).json({ success: true, message: "Order deleted", blockchainTxId });
   } catch (err) {
     console.error("DeleteOrder Error:", err);
     return res.status(500).json({ message: err.message });
