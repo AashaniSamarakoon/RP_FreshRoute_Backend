@@ -1,3 +1,5 @@
+const fs = require("fs").promises;
+const path = require("path");
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { submitWithTx } = require("../../utils/blockchainUtils");
@@ -10,6 +12,17 @@ const placeOrder = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // wallet requirement
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register a wallet before placing an order.",
+      });
+    }
 
     // 1. Fetch Buyer
     const { data: buyerData, error: buyerError } = await supabase
@@ -153,6 +166,17 @@ const updateOrder = async (req, res) => {
     const userId = req.user && req.user.id;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
+    // check wallet
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register a wallet before updating an order.",
+      });
+    }
+
     const { orderId } = req.params;
     const { quantity, grade } = req.body;
 
@@ -225,9 +249,19 @@ const deleteOrder = async (req, res) => {
     const userId = req.user && req.user.id;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
+    // wallet check
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register a wallet before deleting an order.",
+      });
+    }
+
     const { orderId } = req.params;
     if (!orderId) return res.status(400).json({ message: "Order ID required" });
-
     const { data: existingOrder, error: fetchErr } = await supabase
       .from("placed_orders")
       .select("*")

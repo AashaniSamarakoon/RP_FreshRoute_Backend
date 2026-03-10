@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const fs = require("fs").promises;
+const path = require("path");
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { onNewStockAdded } = require("../../Services/matchingService");
@@ -48,6 +50,18 @@ const submitPredictStock = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // **wallet certificate check** - if user has no identity file, block stock addition
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      // send clear validation error back to frontend
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please verify you sef before adding a stock.",
+      });
+    }
 
     const {
       fruit_type,
@@ -171,6 +185,17 @@ const updateStock = async (req, res) => {
   try {
     const userId = req.user.id;
     const { stockId } = req.params; // The Supabase ID (e.g., UUID)
+
+    // ensure user has blockchain identity before attempting updates
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register/register a wallet before updating stock.",
+      });
+    }
 
     // 1. Get Existing Data (to check ownership)
     const { data: existingStock, error: fetchError } = await supabase
