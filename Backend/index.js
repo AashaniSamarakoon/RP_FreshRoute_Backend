@@ -9,7 +9,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "FreshRoute backend running" });
+  res.json({ status: "Healthy", message: "FreshRoute backend running" });
 });
 
 app.get("/api/health", (req, res) => {
