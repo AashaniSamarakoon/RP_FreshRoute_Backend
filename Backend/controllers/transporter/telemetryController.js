@@ -64,7 +64,7 @@ async function checkTemperatureSafety(vehicleId, currentTemp) {
     .from("transport_jobs")
     .select("route_manifest")
     .eq("vehicle_id", vehicleId)
-    .eq("status", "IN_TRANSIT");
+    // .eq("status", "IN_TRANSIT");
 
   if (!jobs?.length) return;
 

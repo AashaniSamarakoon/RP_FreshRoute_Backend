@@ -2,8 +2,8 @@
 const axios = require("axios");
 
 // CONFIGURATION
-const BACKEND_URL = "http://localhost:4000";
-const VEHICLE_ID = "49d500c0-8759-4c80-b5be-aeeeec7d8709";
+const BACKEND_URL = "https://public.freshroute.lk";
+const VEHICLE_ID = "c36d9b52-73e8-40e0-a204-24d745a46294";
 
 // SETTINGS
 let currentTemp = 40.0;
