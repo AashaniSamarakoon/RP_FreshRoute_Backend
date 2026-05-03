@@ -1,0 +1,87 @@
+project_name: mango_quality_multitask
+seed: 42
+paths:
+  images_root: data/images
+  labels_csv: data/labels.csv
+  split_csv: data/labels_split.csv
+  outputs_root: outputs
+training:
+  image_size: 224
+  batch_size: 16
+  max_epochs: 25
+  patience: 5
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  num_workers: 0
+  unfreeze_last_n: 2
+  use_weighted_sampler: true
+  train_baseline_first: true
+  save_onnx: true
+  save_torchscript: true
+  onnx_opset_version: 18  # align with current torch.onnx (avoids broken down-convert to 13)
+  amp: true
+loss_weights:
+  grade: 1.0
+  color_stage: 0.7
+  spot_severity: 0.7
+  blemish_severity: 0.7
+preprocessing:
+  use_background_cleanup: true
+  use_crop_refinement: true
+  brightness_limit: 0.15
+  contrast_limit: 0.15
+  saturation_limit: 0.15
+  hue_limit: 0.01
+  rotation_degrees: 10
+  random_resized_crop_scale: [0.90, 1.0]
+  random_resized_crop_ratio: [0.95, 1.05]
+  normalize_mean: [0.485, 0.456, 0.406]
+  normalize_std: [0.229, 0.224, 0.225]
+model:
+  backbone: mobilenet_v3_large
+  dropout: 0.3
+  shared_dim: 512
+  use_classical_features_in_grade_head: true
+  classical_feature_dim: 8
+gradcam:
+  max_images_per_grade: 2
+  target_layer_name: features.16
+bootstrap:
+  folder_to_grade:
+    gradea: A
+    gradeahighest: A
+    gradea_highest: A
+    grade_a: A
+    a: A
+    gradeb: B
+    gradebmiddle: B
+    gradeb_middle: B
+    grade_b: B
+    b: B
+    gradec: C
+    gradeclowest: C
+    gradec_lowest: C
+    grade_c: C
+    c: C
+  grade_to_attribute_defaults:
+    A:
+      color_stage: yellow
+      spot_severity: none
+      blemish_severity: none
+      black_spot: 0
+      scratch: 0
+      discoloration: 0
+    B:
+      color_stage: mixed
+      spot_severity: mild
+      blemish_severity: mild
+      black_spot: 1
+      scratch: 0
+      discoloration: 0
+    C:
+      color_stage: greenish
+      spot_severity: severe
+      blemish_severity: severe
+      black_spot: 1
+      scratch: 1
+      discoloration: 1

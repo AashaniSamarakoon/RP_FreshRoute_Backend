@@ -25,6 +25,7 @@
     "express-rate-limit": "^8.3.0",
     "fabric-ca-client": "^2.2.20",
     "fabric-network": "^2.2.20",
+    "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",

@@ -1,0 +1,8 @@
+{
+  "yellow_min": 0.55,
+  "severe_spot_max_for_a": 0.15,
+  "severe_blemish_max_for_a": 0.15,
+  "greenish_min_for_c": 0.4,
+  "severe_spot_min_for_c": 0.4,
+  "severe_blemish_min_for_c": 0.4
+}
