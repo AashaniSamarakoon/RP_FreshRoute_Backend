@@ -10,9 +10,9 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Environment
-# .env
-# .env.*.local
-# .env.local
+.env
+.env.*.local
+.env.local
 
 # Build output
 dist/
