@@ -70,6 +70,7 @@ const adminGradingRoutes = require("./routes/admin/gradingRoutes");
 const adminTempsRoutes = require("./routes/admin/tempsRoutes");
 const payhereRoutes = require("./routes/payhereRoutes");
 const proRoutes = require("./routes/proRoutes");
+const pushTokenRoutes = require("./routes/pushTokenRoutes");
 const { runDailyAutoCharge } = require("./Services/payhereChargeService");
 const deliveryRoutes = require("./routes/transporter/deliveryRoutes");
 const app = express();
@@ -175,6 +176,7 @@ app.get("/api/complaints/:id", authMiddleware, requireRole("farmer"), getFarmerC
 
 // SMS preferences (accessible at /api/sms-preferences for farmer users)
 app.use("/api/sms-preferences", authMiddleware, requireRole("farmer"), smsRoutes);
+app.use("/api/farmer/sms-preferences", authMiddleware, requireRole("farmer"), smsRoutes);
 
 // Fruit properties (GET id, fruit_name, variant)
 // public endpoint – the frontend needs fruit list even before login
@@ -260,6 +262,9 @@ app.use("/api/payhere", payhereRoutes);
 
 // Pro plan + personal market forecast (includes a separate PayHere notify path)
 app.use("/api/pro", proRoutes);
+
+// Expo push token registration for authenticated mobile users
+app.use("/api/push-tokens", authMiddleware, pushTokenRoutes);
 
 // Note: the old public form redirect path has been retired; payments now
 // originate via the mobile SDK, so there's no need to mount the router at

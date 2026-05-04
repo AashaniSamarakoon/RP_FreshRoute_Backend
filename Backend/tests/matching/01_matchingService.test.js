@@ -43,7 +43,12 @@ describe("Services/matchingService", () => {
         price_per_kg: 100,
         image_url: null,
         image_hash: null,
-        farmer: { user_id: "f1", reputation: 4, latitude: 7.0, longitude: 80.0 },
+        farmer: {
+          user_id: "f1",
+          reputation: 4,
+          latitude: 7.0,
+          longitude: 80.0,
+        },
       },
       {
         id: "s2",
@@ -54,7 +59,12 @@ describe("Services/matchingService", () => {
         price_per_kg: 100,
         image_url: null,
         image_hash: null,
-        farmer: { user_id: "f2", reputation: 3, latitude: 6.95, longitude: 79.95 },
+        farmer: {
+          user_id: "f2",
+          reputation: 3,
+          latitude: 6.95,
+          longitude: 79.95,
+        },
       },
     ];
 
@@ -65,16 +75,19 @@ describe("Services/matchingService", () => {
         .mockImplementationOnce(() => thenable({ data: [], error: null }))
         .mockImplementationOnce(() => thenable({ data: order, error: null }))
         .mockImplementationOnce(() => thenable({ data: pool, error: null }))
-        .mockImplementationOnce(() => thenable({ data: { id: "s2" }, error: null })),
+        .mockImplementationOnce(() =>
+          thenable({ data: { id: "s2" }, error: null }),
+        ),
     };
 
     const supabaseAdmin = {
-      from: jest.fn(() =>
-        thenable({ data: { id: "p1" }, error: null }),
-      ),
+      from: jest.fn(() => thenable({ data: { id: "p1" }, error: null })),
     };
 
-    jest.doMock("../../utils/supabaseClient", () => ({ supabase, supabaseAdmin }));
+    jest.doMock("../../utils/supabaseClient", () => ({
+      supabase,
+      supabaseAdmin,
+    }));
 
     const { runMatchingAlgorithm } = require("../../Services/matchingService");
 
@@ -82,6 +95,84 @@ describe("Services/matchingService", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].stock_grade).toBe("B");
+  });
+
+  test("runMatchingAlgorithm skips stale harvest stock", async () => {
+    jest.resetModules();
+
+    const order = {
+      id: "o1",
+      fruit_type: "Mango",
+      variant: "Alphonso",
+      grade: "B",
+      quantity: 10,
+      required_date: "2026-05-10",
+      latitude: 6.9,
+      longitude: 79.9,
+    };
+
+    const pool = [
+      {
+        id: "s1",
+        quantity: 10,
+        grade: "B",
+        estimated_harvest_date: "2026-03-13",
+        status: "OPEN",
+        price_per_kg: 100,
+        image_url: null,
+        image_hash: null,
+        farmer: {
+          user_id: "f1",
+          reputation: 4,
+          latitude: 7.0,
+          longitude: 80.0,
+        },
+      },
+      {
+        id: "s2",
+        quantity: 10,
+        grade: "B",
+        estimated_harvest_date: "2026-05-08",
+        status: "OPEN",
+        price_per_kg: 100,
+        image_url: null,
+        image_hash: null,
+        farmer: {
+          user_id: "f2",
+          reputation: 3,
+          latitude: 6.95,
+          longitude: 79.95,
+        },
+      },
+    ];
+
+    const supabase = {
+      from: jest
+        .fn()
+        .mockImplementationOnce(() => thenable({ data: [], error: null }))
+        .mockImplementationOnce(() => thenable({ data: [], error: null }))
+        .mockImplementationOnce(() => thenable({ data: order, error: null }))
+        .mockImplementationOnce(() => thenable({ data: pool, error: null }))
+        .mockImplementationOnce(() =>
+          thenable({ data: { id: "s2" }, error: null }),
+        ),
+    };
+
+    const supabaseAdmin = {
+      from: jest.fn(() => thenable({ data: { id: "p1" }, error: null })),
+    };
+
+    jest.doMock("../../utils/supabaseClient", () => ({
+      supabase,
+      supabaseAdmin,
+    }));
+
+    const { runMatchingAlgorithm } = require("../../Services/matchingService");
+
+    const result = await runMatchingAlgorithm("o1");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].stock_id).toBe("s2");
   });
 
   test("releaseMatchedStockForExpiredPayments returns count", async () => {
@@ -100,9 +191,14 @@ describe("Services/matchingService", () => {
 
     const supabase = { from: jest.fn() };
 
-    jest.doMock("../../utils/supabaseClient", () => ({ supabase, supabaseAdmin }));
+    jest.doMock("../../utils/supabaseClient", () => ({
+      supabase,
+      supabaseAdmin,
+    }));
 
-    const { releaseMatchedStockForExpiredPayments } = require("../../Services/matchingService");
+    const {
+      releaseMatchedStockForExpiredPayments,
+    } = require("../../Services/matchingService");
 
     const count = await releaseMatchedStockForExpiredPayments();
 

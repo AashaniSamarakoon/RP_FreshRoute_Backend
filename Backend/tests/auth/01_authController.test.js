@@ -16,6 +16,7 @@ function thenable(result) {
   const p = Promise.resolve(result);
   const chain = {
     select: jest.fn(() => chain),
+    delete: jest.fn(() => chain),
     upsert: jest.fn(() => chain),
     insert: jest.fn(() => chain),
     update: jest.fn(() => chain),
@@ -122,6 +123,68 @@ describe("Auth/authController", () => {
     expect(res.statusCode).toBe(201);
     expect(res.body.user.role).toBe("buyer");
     expect(res.body.blockchainStatus).toBe("Registered on Ledger");
+  });
+
+  test("signup fails and removes partial user when blockchain identity fails", async () => {
+    jest.resetModules();
+
+    const supabase = {
+      auth: {
+        signUp: jest.fn().mockResolvedValue({
+          data: {
+            user: { id: "u1", email: "farmer@example.com", identities: [{}] },
+            session: { access_token: "tok" },
+          },
+          error: null,
+        }),
+      },
+    };
+
+    const deleteUser = jest.fn().mockResolvedValue({ data: {}, error: null });
+    const supabaseAdmin = {
+      auth: { admin: { deleteUser } },
+      from: jest
+        .fn()
+        .mockImplementationOnce(() =>
+          thenable({ data: { user_id: "u1" }, error: null }),
+        )
+        .mockImplementation(() => thenable({ data: null, error: null })),
+    };
+
+    const registerAndEnrollUser = jest.fn().mockResolvedValue(false);
+
+    jest.doMock("../../utils/supabaseClient", () => ({ supabase, supabaseAdmin }));
+    jest.doMock("../../Services/blockchain/identityService", () => ({
+      registerAndEnrollUser,
+    }));
+    jest.doMock("../../Services/blockchain/contractService", () => ({
+      getContract: jest.fn(),
+    }));
+    jest.doMock("../../utils/blockchainUtils", () => ({
+      submitWithTx: jest.fn(),
+    }));
+
+    const { signup } = require("../../controllers/Auth/authController");
+
+    const req = {
+      body: {
+        first_name: "Ada",
+        last_name: "Lovelace",
+        email: "farmer@example.com",
+        phone: "0771231234",
+        password: "pw123",
+        role: "farmer",
+      },
+    };
+    const res = makeRes();
+
+    await signup(req, res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body.blockchainStatus).toBe("Identity Failed");
+    expect(deleteUser).toHaveBeenCalledWith("u1");
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("farmers");
+    expect(supabaseAdmin.from).toHaveBeenCalledWith("users");
   });
 
   test("login returns token and role profile", async () => {

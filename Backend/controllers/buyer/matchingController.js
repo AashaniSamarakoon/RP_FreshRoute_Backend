@@ -1,5 +1,6 @@
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { runMatchingAlgorithm, releaseStockReservation } = require("../../Services/matchingService");
+const { createNotificationAndPush } = require("../../Services/notificationService");
 const { fetchUnitPrice, calculatePrice } = require("../../utils/pricingUtils");
 
 // ─── Shared Supabase select fragments ────────────────────────────────────────
@@ -410,7 +411,9 @@ const approveProposal = async (req, res) => {
 
     const { data: proposal, error: proposalError } = await supabase
       .from("match_proposals")
-      .select("*, order:placed_orders!order_id(buyer_id)")
+      .select(
+        "*, order:placed_orders!order_id(buyer_id), stock:estimated_stock!stock_id(farmer_id)",
+      )
       .eq("id", proposalId)
       .eq("status", "PENDING_BUYER")
       .single();
@@ -446,6 +449,33 @@ const approveProposal = async (req, res) => {
       .eq("id", proposal.order_id);
 
     // Note: Cancellation of competing proposals happens when farmer accepts, handled by database triggers
+    try {
+      const farmerUserId = proposal.stock?.farmer_id;
+
+      if (farmerUserId) {
+        await createNotificationAndPush(farmerUserId, {
+          title: "New buyer request",
+          body: "A buyer selected your produce. Please review the proposal.",
+          category: "order",
+          severity: "info",
+          action_url: `/farmer/proposals/${proposalId}`,
+          data: {
+            type: "MATCH_PROPOSAL_CREATED",
+            proposalId,
+            orderId: proposal.order_id,
+          },
+        });
+      } else {
+        console.warn(
+          `[Matching] Farmer user_id not found for proposal ${proposalId}`,
+        );
+      }
+    } catch (notificationError) {
+      console.warn(
+        "[Matching] Failed to notify farmer about buyer request:",
+        notificationError.message,
+      );
+    }
 
     return res
       .status(200)

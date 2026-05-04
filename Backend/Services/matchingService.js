@@ -14,6 +14,23 @@ const RESERVATION_EXPIRY_MINUTES = 24 * 60; // 24 hours
 // Grade hierarchy — A is highest, C is lowest
 const GRADE_RANK = { A: 3, B: 2, C: 1 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDateOnly = (value) => {
+  if (!value) return null;
+  if (typeof value === "string") return value.split("T")[0];
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().split("T")[0];
+};
+
+const parseDateOnly = (value) => {
+  const dateOnly = toDateOnly(value);
+  if (!dateOnly) return null;
+  const d = new Date(`${dateOnly}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 /**
  * Returns a quality score 0–1:
  *   1.0 — exact grade match
@@ -409,8 +426,19 @@ const runMatchingAlgorithm = async (orderId) => {
       buyer_location: { lat: order.latitude, lon: order.longitude },
     });
 
+    const orderRequiredDate = parseDateOnly(order.required_date);
+    if (!orderRequiredDate) {
+      console.warn(`[Matching] Invalid required_date for order ${order.id}`);
+      return [];
+    }
+
+    const requiredDateOnly = toDateOnly(order.required_date);
+    const minHarvestDateOnly = toDateOnly(
+      new Date(orderRequiredDate.getTime() - MAX_DAYS_WINDOW * DAY_MS),
+    );
+
     // Step 2: Fetch eligible OPEN stocks
-    const { data: pool, error: poolError } = await supabase
+    let poolQuery = supabase
       .from("estimated_stock")
       .select(
         `
@@ -435,8 +463,16 @@ const runMatchingAlgorithm = async (orderId) => {
       .eq("variant", order.variant)
       // grade is scored (not hard-filtered) so same OR higher grade stocks are considered
       .eq("status", "OPEN")
-      .lte("estimated_harvest_date", order.required_date)
       .gte("quantity", 1);
+
+    if (requiredDateOnly) {
+      poolQuery = poolQuery.lte("estimated_harvest_date", requiredDateOnly);
+    }
+    if (minHarvestDateOnly) {
+      poolQuery = poolQuery.gte("estimated_harvest_date", minHarvestDateOnly);
+    }
+
+    const { data: pool, error: poolError } = await poolQuery;
 
     if (poolError) throw new Error(poolError.message);
     if (!pool || pool.length === 0) {
@@ -447,6 +483,10 @@ const runMatchingAlgorithm = async (orderId) => {
     console.log(`[Matching] ✅ Found ${pool.length} OPEN stocks for matching.`);
 
     // Step 3: Prepare Candidates (filter out stocks whose grade is below required)
+    const minHarvestDate = new Date(
+      orderRequiredDate.getTime() - MAX_DAYS_WINDOW * DAY_MS,
+    );
+
     const candidates = pool
       .map((item) => ({
         stock_id: item.id,
@@ -467,7 +507,14 @@ const runMatchingAlgorithm = async (orderId) => {
         gradeScore: 0,
         finalScore: 0,
       }))
-      .filter((c) => getGradeScore(c.grade, order.grade) > 0); // drop sub-grade stocks
+      .filter((c) => getGradeScore(c.grade, order.grade) > 0)
+      .filter((c) => {
+        const harvestDate = parseDateOnly(c.estimated_harvest_date);
+        if (!harvestDate) return false;
+        return (
+          harvestDate >= minHarvestDate && harvestDate <= orderRequiredDate
+        );
+      });
 
     if (candidates.length === 0) {
       console.log("[Matching] ❌ No stocks meet or exceed the required grade.");
@@ -475,8 +522,6 @@ const runMatchingAlgorithm = async (orderId) => {
     }
 
     // Step 4: Score each candidate
-    const orderRequiredDate = new Date(order.required_date);
-
     console.log(
       `[Matching] Order delivery coords: lat=${order.latitude}, lon=${order.longitude}`,
     );
@@ -588,7 +633,10 @@ const runMatchingAlgorithm = async (orderId) => {
             updated_at: new Date().toISOString(),
           });
         if (splitError) {
-          console.error(`[Matching] Failed to split remainder stock:`, splitError);
+          console.error(
+            `[Matching] Failed to split remainder stock:`,
+            splitError,
+          );
         } else {
           console.log(
             `[Matching] Split stock ${candidate.stock_id}: reserved ${takeQty}kg, returned ${remainderQty}kg to OPEN pool`,
@@ -670,7 +718,10 @@ const releaseMatchedStockForExpiredPayments = async () => {
       .lt("updated_at", cutoff);
 
     if (fetchError) {
-      console.error("[Stock] Failed to fetch stale AWAITING_PAYMENT orders:", fetchError);
+      console.error(
+        "[Stock] Failed to fetch stale AWAITING_PAYMENT orders:",
+        fetchError,
+      );
       return 0;
     }
     if (!staleOrders?.length) return 0;
@@ -714,7 +765,9 @@ const releaseMatchedStockForExpiredPayments = async () => {
     }
 
     if (count > 0)
-      console.log(`[Stock] Released ${count} MATCHED stocks due to payment timeout (48h)`);
+      console.log(
+        `[Stock] Released ${count} MATCHED stocks due to payment timeout (48h)`,
+      );
     return count;
   } catch (err) {
     console.error("[Stock] Error releasing payment-expired stock:", err);
@@ -781,6 +834,17 @@ const onNewStockAdded = async (stockId) => {
       return;
     }
 
+    const harvestDate = parseDateOnly(stock.estimated_harvest_date);
+    if (!harvestDate) {
+      console.warn(`[Stock Event] Invalid harvest date for stock ${stockId}`);
+      return;
+    }
+
+    const harvestDateOnly = toDateOnly(harvestDate);
+    const maxRequiredDateOnly = toDateOnly(
+      new Date(harvestDate.getTime() + MAX_DAYS_WINDOW * DAY_MS),
+    );
+
     // Find all grades this stock can serve:
     //   Grade A stock → can fill A, B, or C orders
     //   Grade B stock → can fill B or C orders
@@ -801,7 +865,8 @@ const onNewStockAdded = async (stockId) => {
       .eq("fruit_type", stock.fruit_type)
       .eq("variant", stock.variant)
       .in("grade", eligibleOrderGrades)
-      .gte("required_date", stock.estimated_harvest_date)
+      .gte("required_date", harvestDateOnly)
+      .lte("required_date", maxRequiredDateOnly)
       .order("created_at", { ascending: true });
 
     if (ordersError || !matchingOrders?.length) {
