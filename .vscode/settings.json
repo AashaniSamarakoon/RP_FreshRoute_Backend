@@ -1,4 +1,6 @@
 {
   "snyk.advanced.autoSelectOrganization": true,
-  "snyk.advanced.organization": "703f4b8f-b67c-4f75-8cc1-a5b98030db26"
+  "snyk.advanced.organization": "703f4b8f-b67c-4f75-8cc1-a5b98030db26",
+  "jest.rootPath": "Backend",
+  "jest.jestCommandLine": "node ./Backend/node_modules/jest/bin/jest.js --config ./Backend/jest.config.js"
 }

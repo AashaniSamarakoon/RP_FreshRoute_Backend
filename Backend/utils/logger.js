@@ -15,6 +15,7 @@ const logger = new winston.Logger({
   transports: [
     // Write all logs to combined.log
     new winston.transports.File({
+      name: "combined-file",
       filename: path.join(logsDir, "combined.log"),
       maxsize: 5242880, // 5MB
       maxFiles: 5,
@@ -23,6 +24,7 @@ const logger = new winston.Logger({
     }),
     // Write errors to error.log
     new winston.transports.File({
+      name: "error-file",
       filename: path.join(logsDir, "error.log"),
       level: "error",
       maxsize: 5242880, // 5MB
@@ -32,6 +34,7 @@ const logger = new winston.Logger({
     }),
     // Write fruit grading specific logs
     new winston.transports.File({
+      name: "fruit-grading-file",
       filename: path.join(logsDir, "fruit-grading.log"),
       maxsize: 5242880, // 5MB
       maxFiles: 5,
@@ -43,15 +46,28 @@ const logger = new winston.Logger({
 
 // Add console transport in development
 if (process.env.NODE_ENV !== "production") {
-  logger.add(new winston.transports.Console({
+  logger.add(winston.transports.Console, {
+    name: "console",
     timestamp: true,
     colorize: true,
     prettyPrint: true
-  }));
+  });
 }
 
-// Create a child logger for fruit grading with specific context
-logger.fruitGrading = logger.child({ module: "fruit-grading" });
+function createModuleLogger(moduleName) {
+  const moduleLogger = {};
+
+  ["error", "warn", "info", "verbose", "debug", "silly"].forEach((level) => {
+    moduleLogger[level] = (message, meta) => {
+      logger.log(level, message, Object.assign({ module: moduleName }, meta || {}));
+    };
+  });
+
+  return moduleLogger;
+}
+
+// Create a module logger for fruit grading with specific context
+logger.fruitGrading = createModuleLogger("fruit-grading");
 
 module.exports = logger;
 
