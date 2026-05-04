@@ -55,7 +55,7 @@ const fruitClassificationService = require("./Services/fruitGrading/fruitClassif
 const multer = require("multer");
 const logisticsRoutes = require("./routes/transporter/logisticsRoutes");
 const telemetryRoutes = require("./routes/transporter/telemetryRoutes");
-const { getFarmerComplaints, getFarmerComplaintDetails, getFarmerUserProfile, updateFarmerUserProfile } = require("./controllers/farmer/farmerController");
+const { getFarmerComplaints, getFarmerComplaintDetails, getFarmerUserProfile, updateFarmerUserProfile, getFarmerOrdersOverview } = require("./controllers/farmer/farmerController");
 const { getFruits } = require("./controllers/common/fruitController");
 
 const alertRoutes = require("./routes/alertRoutes");
@@ -70,6 +70,7 @@ const adminComplaintRoutes = require("./routes/admin/complaintRoutes");
 const adminGradingRoutes = require("./routes/admin/gradingRoutes");
 const adminTempsRoutes = require("./routes/admin/tempsRoutes");
 const payhereRoutes = require("./routes/payhereRoutes");
+const proRoutes = require("./routes/proRoutes");
 const { runDailyAutoCharge } = require("./Services/payhereChargeService");
 const deliveryRoutes = require("./routes/transporter/deliveryRoutes");
 const app = express();
@@ -120,6 +121,7 @@ app.use((req, res, next) => {
     "/forecast/fruit",
     "/live-market",
     "/prices",
+    "/pro",
     "/notifications",
     "/dashboard",
     "/home",
@@ -128,6 +130,7 @@ app.use((req, res, next) => {
     "/complaints",
     "/user-profile",
     "/fruits",
+    "/sms-preferences",
   ];
   const missingApi = !req.path.startsWith("/api/");
   const matches = prefixable.some((route) => req.path.startsWith(route));
@@ -157,6 +160,9 @@ app.use(
 // Farmer routes (forecast, notifications, SMS, etc.)
 app.use("/api/farmer", authMiddleware, requireRole("farmer"), farmerRoutes);
 
+// Farmer orders and SMS routes (additional farmer-specific routes)
+app.use("/api/farmer", authMiddleware, requireRole("farmer"), ordersRoutes);
+
 // Farmer user profile (accessible at /api/user-profile for frontend convenience)
 app.get("/api/user-profile", authMiddleware, requireRole("farmer"), getFarmerUserProfile);
 app.put("/api/user-profile", authMiddleware, requireRole("farmer"), updateFarmerUserProfile);
@@ -167,6 +173,9 @@ app.get("/api/fruits", authMiddleware, requireRole("farmer"), getFruits);
 // Farmer complaints (accessible at /api/complaints for frontend convenience)
 app.get("/api/complaints", authMiddleware, requireRole("farmer"), getFarmerComplaints);
 app.get("/api/complaints/:id", authMiddleware, requireRole("farmer"), getFarmerComplaintDetails);
+
+// SMS preferences (accessible at /api/sms-preferences for farmer users)
+app.use("/api/sms-preferences", authMiddleware, requireRole("farmer"), smsRoutes);
 
 // Fruit properties (GET id, fruit_name, variant)
 // public endpoint – the frontend needs fruit list even before login
@@ -250,6 +259,9 @@ app.use("/api/admin/temps", adminTempsRoutes);
 // PayHere IPN notification endpoint (no auth — called by PayHere server)
 app.use("/api/payhere", payhereRoutes);
 
+// Pro plan + personal market forecast (includes a separate PayHere notify path)
+app.use("/api/pro", proRoutes);
+
 // Note: the old public form redirect path has been retired; payments now
 // originate via the mobile SDK, so there's no need to mount the router at
 // "/payhere" without the /api prefix.
@@ -269,6 +281,9 @@ app.use(
 app.use("/api/farmer/dashboard", farmerDashboardRoutes);
 app.use("/api/transporter/dashboard", transporterDashboardRoutes);
 app.use("/api/buyer/dashboard", buyerDashboardRoutes);
+
+// Farmer orders overview (accessible at /api/orders/overview for frontend convenience)
+app.get("/api/orders/overview", authMiddleware, requireRole("farmer"), getFarmerOrdersOverview);
 
 // Error handler for multer errors (must be after all routes)
 app.use((error, req, res, next) => {

@@ -630,61 +630,49 @@ async function getFarmerOrdersOverview(req, res) {
   try {
     const farmerId = req.user.id;
 
-    // Get completed orders count
-    const { count: completedCount, error: countError } = await supabase
+    // Get all orders for this farmer
+    const { data: allOrders, error: allOrdersError } = await supabase
       .from("placed_orders")
-      .select("*", { count: "exact", head: true })
+      .select('id, fruit_type, variant, quantity, grade, total_amount, farmer_share_amount, status, required_date, delivered_at, created_at')
       .eq("selected_farmer_id", farmerId)
-      .eq("status", "COMPLETED");
+      .order("created_at", { ascending: false });
 
-    if (countError) {
-      console.error("Orders count error:", countError);
-      return res.status(500).json({ message: "Failed to fetch orders count" });
-    }
+    // Calculate overview statistics
+    const totalOrders = allOrders.length;
+    const completedOrders = allOrders.filter(order => order.status === "DELIVERED");
+    const pendingOrders = allOrders.filter(order =>
+      ["PENDING_FARMER", "AWAITING_PAYMENT", "AUTHORIZED_PAYMENT", "READY_FOR_PICKUP"].includes(order.status)
+    );
 
-    // Get last completed order date
-    const { data: lastOrder, error: lastError } = await supabase
-      .from("placed_orders")
-      .select("delivered_at")
-      .eq("selected_farmer_id", farmerId)
-      .eq("status", "COMPLETED")
-      .order("delivered_at", { ascending: false })
-      .limit(1)
-      .single();
+    const totalRevenue = completedOrders.reduce((sum, order) => sum + (order.farmer_share_amount || 0), 0);
+    const completionRate = totalOrders > 0 ? ((completedOrders.length / totalOrders) * 100).toFixed(1) : 0;
 
-    // Get next scheduled order date (using pickup_date for pending orders)
-    const { data: nextOrder, error: nextError } = await supabase
-      .from("placed_orders")
-      .select("pickup_date")
-      .eq("selected_farmer_id", farmerId)
-      .eq("status", "pending")
-      .order("pickup_date", { ascending: true })
-      .limit(1)
-      .single();
+    // Calculate last completed date
+    const sortedCompleted = completedOrders
+      .filter(order => order.delivered_at)
+      .sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at));
+    const lastCompleted = sortedCompleted.length > 0
+      ? new Date(sortedCompleted[0].delivered_at).toISOString()
+      : null;
 
-    if (lastError && lastError.code !== 'PGRST116') { // PGRST116 is no rows
-      console.error("Last order error:", lastError);
-    }
+    // Calculate next order date (earliest required_date from pending orders, fallback to created_at)
+    const pendingWithDate = pendingOrders
+      .map(order => ({ ...order, date: order.required_date || order.created_at }))
+      .filter(order => order.date)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    const nextOrder = pendingWithDate.length > 0
+      ? new Date(pendingWithDate[0].date).toISOString()
+      : null;
 
-    // Get pending orders count
-    const { count: pendingCount, error: pendingError } = await supabase
-      .from("placed_orders")
-      .select("*", { count: "exact", head: true })
-      .eq("selected_farmer_id", farmerId)
-      .eq("status", "pending");
-
-    if (pendingError) {
-      console.error("Pending orders count error:", pendingError);
-    }
-
-    const overview = {
-      completedCount: completedCount || 0,
-      pendingCount: pendingCount || 0,
-      lastCompletedDate: lastOrder?.delivered_at || null,
-      nextOrderDate: nextOrder?.pickup_date || null,
+    const response = {
+      completedCount: completedOrders.length,
+      pendingCount: pendingOrders.length,
+      lastCompletedDate: lastCompleted ? new Date(lastCompleted).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : 'N/A',
+      nextOrderDate: nextOrder ? new Date(nextOrder).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : 'N/A'
     };
 
-    res.json(overview);
+    console.log(`[Farmer Orders Overview] User ${farmerId}: ${totalOrders} total orders`);
+    res.json(response);
   } catch (err) {
     console.error("Orders overview server error:", err);
     res.status(500).json({ message: "Failed to fetch orders overview" });
