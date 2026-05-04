@@ -17,7 +17,7 @@ class FruitClassificationService {
       "../../..",
       "AI_layer",
       "mango_classification",
-      "best_mango_binary.onnx"
+      "best_mango_binary_new.onnx"
     );
   }
 

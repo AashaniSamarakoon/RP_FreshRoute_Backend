@@ -15,7 +15,7 @@ export class StockContract extends BaseContract {
         imageHashesJson: string, // JSON string of array, e.g. '["hash1","hash2"]'
         grade: string,           // e.g. 'A' | 'B' | 'C' — pass '' if unknown
         harvestDate: string      // ISO date e.g. '2026-03-07' — pass '' if unknown
-    ): Promise<void> {
+    ): Promise<{ txId: string }> {
         const client = this.getClient(ctx);
         if (client.role !== 'farmer') throw new Error('Only farmers can create harvests');
 
@@ -46,6 +46,7 @@ export class StockContract extends BaseContract {
         };
 
         await ctx.stub.putState(harvestId, Buffer.from(JSON.stringify(harvest)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction(false)
@@ -66,7 +67,7 @@ export class StockContract extends BaseContract {
         newImageHashesJson: string, // JSON string of array
         grade: string,              // pass '' to keep existing
         harvestDate: string         // pass '' to keep existing
-    ): Promise<void> {
+    ): Promise<{ txId: string }> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
 
@@ -97,10 +98,11 @@ export class StockContract extends BaseContract {
         harvest.updatedAt = new Date(Number(txTimestamp.seconds) * 1000).toISOString();
 
         await ctx.stub.putState(harvestId, Buffer.from(JSON.stringify(harvest)));
+        return { txId: ctx.stub.getTxID() };
     }
 
     @Transaction()
-    async DeleteHarvest(ctx: Context, harvestId: string): Promise<void> {
+    async DeleteHarvest(ctx: Context, harvestId: string): Promise<{ txId: string }> {
         const data = await ctx.stub.getState(harvestId);
         if (!data || data.length === 0) throw new Error(`Harvest ${harvestId} not found`);
 
@@ -110,6 +112,7 @@ export class StockContract extends BaseContract {
         if (harvest.farmerId !== client.id) throw new Error('Unauthorized delete attempt');
 
         await ctx.stub.deleteState(harvestId);
+        return { txId: ctx.stub.getTxID() };
     }
 
     // --- QUERY FUNCTIONS FOR DASHBOARD ---

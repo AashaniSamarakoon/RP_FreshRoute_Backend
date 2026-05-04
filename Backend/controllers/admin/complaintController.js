@@ -68,7 +68,7 @@ const getComplaints = async (req, res) => {
     const user_id = req.query.user_id ? String(req.query.user_id).trim() : null;
     let query = supabase
       .from("complaints")
-      .select("id, order_id, user_id, user_email, user_name, user_complaint, status, comments, image_verification, comment_thread, created_at, updated_at")
+      .select("id, order_id, user_id, user_email, user_name, user_complaint, status, comments, image_verification, comment_thread, farmer_id, created_at, updated_at")
       .order("created_at", { ascending: false });
     if (user_id) query = query.eq("user_id", user_id);
 

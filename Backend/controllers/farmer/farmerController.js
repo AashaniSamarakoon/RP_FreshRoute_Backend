@@ -623,6 +623,230 @@ async function createFeedback(req, res) {
   }
 }
 
+/**
+ * Get farmer's orders overview
+ */
+async function getFarmerOrdersOverview(req, res) {
+  try {
+    const farmerId = req.user.id;
+
+    // Get completed orders count
+    const { count: completedCount, error: countError } = await supabase
+      .from("placed_orders")
+      .select("*", { count: "exact", head: true })
+      .eq("selected_farmer_id", farmerId)
+      .eq("status", "COMPLETED");
+
+    if (countError) {
+      console.error("Orders count error:", countError);
+      return res.status(500).json({ message: "Failed to fetch orders count" });
+    }
+
+    // Get last completed order date
+    const { data: lastOrder, error: lastError } = await supabase
+      .from("placed_orders")
+      .select("delivered_at")
+      .eq("selected_farmer_id", farmerId)
+      .eq("status", "COMPLETED")
+      .order("delivered_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    // Get next scheduled order date (using pickup_date for pending orders)
+    const { data: nextOrder, error: nextError } = await supabase
+      .from("placed_orders")
+      .select("pickup_date")
+      .eq("selected_farmer_id", farmerId)
+      .eq("status", "pending")
+      .order("pickup_date", { ascending: true })
+      .limit(1)
+      .single();
+
+    if (lastError && lastError.code !== 'PGRST116') { // PGRST116 is no rows
+      console.error("Last order error:", lastError);
+    }
+
+    // Get pending orders count
+    const { count: pendingCount, error: pendingError } = await supabase
+      .from("placed_orders")
+      .select("*", { count: "exact", head: true })
+      .eq("selected_farmer_id", farmerId)
+      .eq("status", "pending");
+
+    if (pendingError) {
+      console.error("Pending orders count error:", pendingError);
+    }
+
+    const overview = {
+      completedCount: completedCount || 0,
+      pendingCount: pendingCount || 0,
+      lastCompletedDate: lastOrder?.delivered_at || null,
+      nextOrderDate: nextOrder?.pickup_date || null,
+    };
+
+    res.json(overview);
+  } catch (err) {
+    console.error("Orders overview server error:", err);
+    res.status(500).json({ message: "Failed to fetch orders overview" });
+  }
+}
+
+/**
+ * Get farmer's profile
+ */
+async function getFarmerProfile(req, res) {
+  try {
+    const farmerId = req.user.id;
+
+    const { data: profile, error } = await supabase
+      .from("farmer_profiles")
+      .select("*")
+      .eq("user_id", farmerId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error("Profile fetch error:", error);
+      return res.status(500).json({ message: "Failed to fetch profile" });
+    }
+
+    if (!profile) {
+      return res.status(404).json({ message: "Profile not found" });
+    }
+
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile fetch server error:", err);
+    res.status(500).json({ message: "Failed to fetch profile" });
+  }
+}
+
+/**
+ * Get farmer's user profile (from users table) - with fruit selection
+ */
+async function getFarmerUserProfile(req, res) {
+  try {
+    const userId = req.user.id;
+
+    const { data: profile, error } = await supabase
+      .from("users")
+      .select("id, email, phone, first_name, last_name, avatar_url, selected_fruits")
+      .eq("id", userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ message: "User profile not found" });
+      }
+      console.error("User profile fetch error:", error);
+      return res.status(500).json({ message: "Failed to fetch user profile" });
+    }
+
+    res.json(profile);
+  } catch (err) {
+    console.error("User profile fetch server error:", err);
+    res.status(500).json({ message: "Failed to fetch user profile" });
+  }
+}
+
+/**
+ * Update farmer's user profile (in users table) - with fruit selection
+ */
+async function updateFarmerUserProfile(req, res) {
+  try {
+    const userId = req.user.id;
+    const {
+      first_name,
+      last_name,
+      email,
+      phone,
+      avatar_url,
+      selected_fruits
+    } = req.body;
+
+    // Update user profile - including fruit selection
+    const { data: profile, error } = await supabase
+      .from("users")
+      .update({
+        first_name,
+        last_name,
+        email,
+        phone,
+        avatar_url,
+        selected_fruits,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId)
+      .select("id, email, phone, first_name, last_name, avatar_url, selected_fruits")
+      .single();
+
+    if (error) {
+      console.error("User profile update error:", error);
+      return res.status(500).json({ message: "Failed to update user profile" });
+    }
+
+    res.json(profile);
+  } catch (err) {
+    console.error("User profile update server error:", err);
+    res.status(500).json({ message: "Failed to update user profile" });
+  }
+}
+
+/**
+ * Get farmer's complaints
+ */
+async function getFarmerComplaints(req, res) {
+  try {
+    const farmerId = req.user.id;
+
+    // Get complaints directly using farmer_id column
+    const { data: complaints, error } = await supabase
+      .from("complaints")
+      .select("id, order_id, user_name, user_complaint, status, created_at")
+      .eq("farmer_id", farmerId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Complaints fetch error:", error);
+      return res.status(500).json({ message: "Failed to fetch complaints" });
+    }
+
+    res.json({ complaints: complaints || [] });
+  } catch (err) {
+    console.error("Complaints fetch server error:", err);
+    res.status(500).json({ message: "Failed to fetch complaints" });
+  }
+}
+
+/**
+ * Get farmer's complaint details
+ */
+async function getFarmerComplaintDetails(req, res) {
+  try {
+    const farmerId = req.user.id;
+    const { id } = req.params;
+
+    const { data: complaint, error } = await supabase
+      .from("complaints")
+      .select("*")
+      .eq("id", id)
+      .eq("farmer_id", farmerId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ message: "Complaint not found" });
+      }
+      console.error("Complaint details fetch error:", error);
+      return res.status(500).json({ message: "Failed to fetch complaint details" });
+    }
+
+    res.json(complaint);
+  } catch (err) {
+    console.error("Complaint details fetch server error:", err);
+    res.status(500).json({ message: "Failed to fetch complaint details" });
+  }
+}
+
 module.exports = {
   getDashboard,
   getHomeSummary,
@@ -635,4 +859,10 @@ module.exports = {
   getFeedback,
   createFeedback,
   getHistoricalPrices,
+  getFarmerOrdersOverview,
+  getFarmerProfile,
+  getFarmerUserProfile,
+  updateFarmerUserProfile,
+  getFarmerComplaints,
+  getFarmerComplaintDetails,
 };

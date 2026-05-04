@@ -4,6 +4,8 @@ const {
   placeOrder,
   getMyOrders,
   getOrderDetails,
+  updateOrder,
+  deleteOrder,
 } = require("../../controllers/buyer/orderController");
 
 // @route   GET /
@@ -24,5 +26,15 @@ router.get("/details/:orderId", getOrderDetails);
 // @desc    Place a new order
 // @access  Private (access control is handled in index.js)
 router.post("/", placeOrder);
+
+// @route   PUT /:orderId
+// @desc    Update quantity/grade of an existing order (buyer only)
+// @access  Private
+router.put("/:orderId", updateOrder);
+
+// @route   DELETE /:orderId
+// @desc    Cancel/delete an order (buyer only)
+// @access  Private
+router.delete("/:orderId", deleteOrder);
 
 module.exports = router;

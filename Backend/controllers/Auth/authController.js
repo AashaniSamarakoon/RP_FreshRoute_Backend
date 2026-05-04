@@ -2,6 +2,7 @@ const {
   registerAndEnrollUser,
 } = require("../../Services/blockchain/identityService");
 const { getContract } = require("../../Services/blockchain/contractService"); // Import the gateway bridge
+const { submitWithTx } = require("../../utils/blockchainUtils");
 const { supabase, supabaseAdmin } = require("../../utils/supabaseClient");
 
 // Signup
@@ -61,7 +62,7 @@ const signup = async (req, res) => {
           ? "buyers"
           : normalizedRole === "FARMER"
           ? "farmers"
-          : "transporters";
+          : "transporter";
 
       const { data, error } = await supabaseAdmin
         .from(table)
@@ -97,13 +98,27 @@ const signup = async (req, res) => {
           "UserContract",
         );
         try {
-          await contract.submitTransaction(
-            "RegisterUser",
-            user.id,
-            fullName,
-            normalizedRole,
-          );
+          const regTx = await submitWithTx(contract, "RegisterUser", user.id, fullName, normalizedRole);
           ledgerStatus = "Registered on Ledger";
+          console.log("RegisterUser tx", regTx);
+          if (regTx) {
+            // store txId on user record (append to array)
+            try {
+              const { data: existingUser } = await supabaseAdmin
+                .from("users")
+                .select("blockchain_tx_id")
+                .eq("id", user.id)
+                .single();
+              const existing = existingUser?.blockchain_tx_id || [];
+              const arr = Array.isArray(existing) ? existing : [existing];
+              await supabaseAdmin
+                .from("users")
+                .update({ blockchain_tx_id: [...arr, regTx] })
+                .eq("id", user.id);
+            } catch (_e) {
+              console.warn("Failed to persist user blockchain txId", _e.message);
+            }
+          }
         } catch (txError) {
           ledgerStatus = "Identity Created, Ledger Failed";
         } finally {
@@ -207,8 +222,9 @@ const login = async (req, res) => {
       }
       roleProfile = buyerData;
     } else if (userRole === "transporter") {
+      // table name is singular 'transporter' elsewhere in code
       const { data: transporterData, error: transporterError } = await supabase
-        .from("transporters")
+        .from("transporter")
         .select("*")
         .eq("user_id", userId)
         .single();

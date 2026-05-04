@@ -1,5 +1,8 @@
+const fs = require("fs").promises;
+const path = require("path");
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
+const { submitWithTx } = require("../../utils/blockchainUtils");
 const { runMatchingAlgorithm } = require("../../Services/matchingService");
 const { calculateDistanceKm } = require("../../utils/logisticsUtils");
 const { fetchUnitPrice, calculatePrice } = require("../../utils/pricingUtils");
@@ -9,6 +12,17 @@ const placeOrder = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // wallet requirement
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register a wallet before placing an order.",
+      });
+    }
 
     // 1. Fetch Buyer
     const { data: buyerData, error: buyerError } = await supabase
@@ -62,10 +76,12 @@ const placeOrder = async (req, res) => {
     if (insertError) throw new Error(insertError.message);
 
     // 3a. Optionally record the order on the blockchain via the OrderContract
+    let blockchainTxId = null;
     try {
       const blockchainOrderId = `ORDER_${orderData.id}`;
       const { contract, close } = await getContract(userId, "OrderContract");
-      await contract.submitTransaction(
+      const txId = await submitWithTx(
+        contract,
         "PlaceOrder",
         blockchainOrderId,
         fruit_type,
@@ -75,7 +91,22 @@ const placeOrder = async (req, res) => {
         required_date,
       );
       await close();
-      console.log("[Blockchain] Order placed on ledger", blockchainOrderId);
+      console.log("[Blockchain] Order placed on ledger", blockchainOrderId, "tx", txId);
+      if (txId) {
+        blockchainTxId = txId;
+        // append to order record
+        const { data: existingOrder } = await supabase
+          .from("placed_orders")
+          .select("blockchain_tx_id")
+          .eq("id", orderData.id)
+          .single();
+        const arrExist = existingOrder?.blockchain_tx_id || [];
+        const arr = Array.isArray(arrExist) ? arrExist : [arrExist];
+        await supabase
+          .from("placed_orders")
+          .update({ blockchain_tx_id: [...arr, txId] })
+          .eq("id", orderData.id);
+      }
     } catch (bcErr) {
       console.error("[Blockchain] PlaceOrder failed:", bcErr.message);
       // continue, database is still valid
@@ -121,12 +152,154 @@ const placeOrder = async (req, res) => {
           : "Order placed. No matches yet - we'll notify you when farmers are available.",
       order: { ...orderData, status: finalStatus, farmerPickup },
       matches: matches,
+      blockchainTxId,
     });
   } catch (err) {
     console.error("PlaceOrder Error:", err);
     return res
       .status(500)
       .json({ message: "Server error", error: err.message });
+  }
+};
+
+// PUT /api/buyer/orders/:orderId
+// allow buyer to update quantity (and optionally grade) of an open order
+const updateOrder = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // check wallet
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register a wallet before updating an order.",
+      });
+    }
+
+    const { orderId } = req.params;
+    const { quantity, grade } = req.body;
+
+    if (!orderId) return res.status(400).json({ message: "Order ID required" });
+    if (quantity !== undefined && (!Number.isInteger(quantity) || quantity <= 0))
+      return res.status(400).json({ message: "Invalid quantity" });
+
+    // fetch existing order
+    const { data: existingOrder, error: fetchErr } = await supabase
+      .from("placed_orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
+    if (fetchErr || !existingOrder)
+      return res.status(404).json({ message: "Order not found" });
+    if (existingOrder.buyer_id !== userId)
+      return res.status(403).json({ message: "Forbidden" });
+    if (existingOrder.status === "CONFIRMED")
+      return res.status(400).json({ message: "Cannot modify a confirmed order" });
+
+    const updateData = {};
+    if (quantity !== undefined) updateData.quantity = quantity;
+    if (grade !== undefined) updateData.grade = grade;
+
+    const { error: updErr } = await supabase
+      .from("placed_orders")
+      .update(updateData)
+      .eq("id", orderId);
+    if (updErr) throw new Error(updErr.message);
+
+    // record change on blockchain
+    let blockchainTxId = null;
+    try {
+      const blockchainOrderId = `ORDER_${orderId}`;
+      const { contract, close } = await getContract(userId, "OrderContract");
+      const txId = await submitWithTx(
+        contract,
+        "UpdateOrderQuantity",
+        blockchainOrderId,
+        (quantity || existingOrder.quantity).toString(),
+      );
+      await close();
+      if (txId) {
+        blockchainTxId = txId;
+        const { data: ex } = await supabase
+          .from("placed_orders")
+          .select("blockchain_tx_id")
+          .eq("id", orderId)
+          .single();
+        const arrExist = ex?.blockchain_tx_id || [];
+        const arr = Array.isArray(arrExist) ? arrExist : [arrExist];
+        await supabase
+          .from("placed_orders")
+          .update({ blockchain_tx_id: [...arr, txId] })
+          .eq("id", orderId);
+      }
+    } catch (bcErr) {
+      console.error("Blockchain UpdateOrder failed:", bcErr.message);
+    }
+
+    return res.status(200).json({ success: true, message: "Order updated", blockchainTxId });
+  } catch (err) {
+    console.error("UpdateOrder Error:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+// DELETE /api/buyer/orders/:orderId
+// buyer can cancel their order and remove it on-chain
+const deleteOrder = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // wallet check
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register a wallet before deleting an order.",
+      });
+    }
+
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ message: "Order ID required" });
+    const { data: existingOrder, error: fetchErr } = await supabase
+      .from("placed_orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
+    if (fetchErr || !existingOrder)
+      return res.status(404).json({ message: "Order not found" });
+    if (existingOrder.buyer_id !== userId)
+      return res.status(403).json({ message: "Forbidden" });
+
+    // delete from Supabase
+    const { error: delErr } = await supabase
+      .from("placed_orders")
+      .delete()
+      .eq("id", orderId);
+    if (delErr) throw new Error(delErr.message);
+
+    // delete on blockchain
+    let blockchainTxId = null;
+    try {
+      const { contract, close } = await getContract(userId, "OrderContract");
+      const txId = await submitWithTx(contract, "DeleteOrder", `ORDER_${orderId}`);
+      await close();
+      console.log("[Blockchain] DeleteOrder tx", txId);
+      blockchainTxId = txId;
+    } catch (bcErr) {
+      console.error("Blockchain DeleteOrder failed:", bcErr.message);
+    }
+
+    return res.status(200).json({ success: true, message: "Order deleted", blockchainTxId });
+  } catch (err) {
+    console.error("DeleteOrder Error:", err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -470,6 +643,8 @@ const getOrderDetails = async (req, res) => {
 
 module.exports = {
   placeOrder,
+  updateOrder,
+  deleteOrder,
   getMyOrders,
   getOrderDetails,
 };

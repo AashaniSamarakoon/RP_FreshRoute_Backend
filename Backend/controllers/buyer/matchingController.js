@@ -36,6 +36,7 @@ const ORDER_SELECT = `
   selected_farmer_id,
   harvest_id,
   blockchain_status,
+  blockchain_tx_id,
   created_at,
   updated_at
 `;

@@ -172,76 +172,7 @@ const saveGrading = async (req, res) => {
       });
     }
 
-    // Update route_manifest: Change PICKUP to DROP for this order_id
-    try {
-      const trimmedJobId = job_id.trim();
-      const trimmedOrderId = order_id.trim();
-
-      // Fetch the transport job
-      const { data: job, error: jobFetchError } = await supabase
-        .from("transport_jobs")
-        .select("route_manifest")
-        .eq("id", trimmedJobId)
-        .single();
-
-      if (jobFetchError || !job) {
-        console.warn(
-          `Warning: Could not fetch transport job ${trimmedJobId} to update route_manifest:`,
-          jobFetchError?.message
-        );
-        // Continue anyway - grading is saved, route update is optional
-      } else {
-        // Update route_manifest: find PICKUP entry for this order_id and change to DROP
-        const routeManifest = job.route_manifest || [];
-        let manifestUpdated = false;
-
-        const updatedManifest = routeManifest.map((entry) => {
-          if (
-            entry.order_id === trimmedOrderId &&
-            entry.type === "PICKUP"
-          ) {
-            manifestUpdated = true;
-            return {
-              ...entry,
-              type: "DROP",
-            };
-          }
-          return entry;
-        });
-
-        if (manifestUpdated) {
-          // Update the transport_jobs table with the updated route_manifest
-          const { error: updateError } = await supabase
-            .from("transport_jobs")
-            .update({ route_manifest: updatedManifest })
-            .eq("id", trimmedJobId);
-
-          if (updateError) {
-            console.warn(
-              `Warning: Could not update route_manifest for job ${trimmedJobId}:`,
-              updateError.message
-            );
-            // Continue anyway - grading is saved
-          } else {
-            console.log(
-              `Successfully updated route_manifest: Changed PICKUP to DROP for order ${trimmedOrderId} in job ${trimmedJobId}`
-            );
-          }
-        } else {
-          console.warn(
-            `Warning: No PICKUP entry found for order_id ${trimmedOrderId} in job ${trimmedJobId}'s route_manifest`
-          );
-        }
-      }
-    } catch (manifestError) {
-      // Log error but don't fail the request - grading is already saved
-      console.error(
-        "Error updating route_manifest (non-critical):",
-        manifestError
-      );
-    }
-
-    // Success response
+    // Success response (transport_jobs / route_manifest is not updated here)
     return res.status(200).json({
       success: true,
       message: "Grading data saved successfully",

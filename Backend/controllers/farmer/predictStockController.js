@@ -1,8 +1,11 @@
 const crypto = require("crypto");
+const fs = require("fs").promises;
+const path = require("path");
 const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { getContract } = require("../../Services/blockchain/contractService");
 const { onNewStockAdded } = require("../../Services/matchingService");
 const { uploadImageToSupabase } = require("../../utils/uploadUtils");
+const { submitWithTx } = require("../../utils/blockchainUtils");
 
 // Get stock by ID
 const getStockById = async (req, res) => {
@@ -47,6 +50,18 @@ const submitPredictStock = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    // **wallet certificate check** - if user has no identity file, block stock addition
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      // send clear validation error back to frontend
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please verify you sef before adding a stock.",
+      });
+    }
 
     const {
       fruit_type,
@@ -120,8 +135,8 @@ const submitPredictStock = async (req, res) => {
 
     try {
       const { contract, close } = await getContract(userId, "StockContract");
-
-      await contract.submitTransaction(
+      const txId = await submitWithTx(
+        contract,
         "CreateHarvest",
         harvestId,
         `${fruit_type}_${variant}`,
@@ -131,10 +146,23 @@ const submitPredictStock = async (req, res) => {
         grade || "",
         estimated_harvest_date || new Date().toISOString().split("T")[0],
       );
-
       await close();
       blockchainStatus = "Success";
-      console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id}`);
+      console.log(`[Blockchain] CreateHarvest Success: HARVEST_${data.id} (tx=${txId})`);
+      data.blockchainTxId = txId;
+      // store txId in Supabase record for future reference (append to array)
+      if (txId) {
+        try {
+          const existing = data.blockchain_tx_id || [];
+          const arr = Array.isArray(existing) ? existing : [existing];
+          await supabase
+            .from("estimated_stock")
+            .update({ blockchain_tx_id: [...arr, txId] })
+            .eq("id", data.id);
+        } catch (_e) {
+          console.warn("Failed to persist blockchain txId for stock", data.id, _e.message);
+        }
+      }
     } catch (bcError) {
       console.error("Blockchain Failed:", bcError);
       blockchainStatus = "Failed";
@@ -157,6 +185,17 @@ const updateStock = async (req, res) => {
   try {
     const userId = req.user.id;
     const { stockId } = req.params; // The Supabase ID (e.g., UUID)
+
+    // ensure user has blockchain identity before attempting updates
+    const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+    try {
+      await fs.access(walletPath);
+    } catch (walletErr) {
+      return res.status(403).json({
+        message:
+          "Blockchain identity not found. Please register/register a wallet before updating stock.",
+      });
+    }
 
     // 1. Get Existing Data (to check ownership)
     const { data: existingStock, error: fetchError } = await supabase
@@ -219,22 +258,30 @@ const updateStock = async (req, res) => {
 
     try {
       const { contract, close } = await getContract(userId, "StockContract");
-
-      // Call the Updated Chaincode Function
-      // Note: We pass 'newImageHash' (empty string if no new image)
-      // The chaincode logic I gave you handles the empty string check.
-      await contract.submitTransaction(
+      const txId = await submitWithTx(
+        contract,
         "UpdateHarvest",
         harvestId,
         updateData.quantity.toString(),
         updateData.price_per_kg.toString(),
-        status || "FRESH", // Default status if not provided
-        newImageHash, // <--- Send new hash (or empty string)
+        status || "FRESH",
+        newImageHash,
       );
-
       await close();
       blockchainStatus = "Success";
-      console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId}`);
+      console.log(`[Blockchain] UpdateHarvest Success: HARVEST_${stockId} (tx=${txId})`);
+      // persist tx id on update as well
+      try {
+        // use existingStock since `data` is undefined in this scope
+        const existing = existingStock.blockchain_tx_id || [];
+        const arr = Array.isArray(existing) ? existing : [existing];
+        await supabase
+          .from("estimated_stock")
+          .update({ blockchain_tx_id: [...arr, txId] })
+          .eq("id", stockId);
+      } catch (_e) {
+        console.warn("Failed to persist blockchain txId for stock update", stockId, _e.message);
+      }
     } catch (bcError) {
       console.error("Blockchain Update Failed:", bcError);
       blockchainStatus = "Failed";
@@ -252,6 +299,57 @@ const updateStock = async (req, res) => {
   }
 };
 
+// DELETE /api/farmer/predictStock/:stockId
+// remove harvest both from Supabase and blockchain
+const deleteStock = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const { stockId } = req.params;
+    if (!stockId) return res.status(400).json({ message: "Stock ID is required" });
+
+    // verify ownership
+    const { data: existingStock, error: fetchError } = await supabase
+      .from("estimated_stock")
+      .select("*")
+      .eq("id", stockId)
+      .single();
+
+    if (fetchError || !existingStock)
+      return res.status(404).json({ message: "Stock not found" });
+
+    if (existingStock.farmer_id !== userId)
+      return res.status(403).json({ message: "Forbidden" });
+
+    // delete from Supabase
+    const { error: deleteError } = await supabase
+      .from("estimated_stock")
+      .delete()
+      .eq("id", stockId);
+
+    if (deleteError) throw new Error("Database delete failed: " + deleteError.message);
+
+    // delete from blockchain
+    let blockchainStatus = "Skipped";
+    try {
+      const { contract, close } = await getContract(userId, "StockContract");
+      const txId = await submitWithTx(contract, "DeleteHarvest", `HARVEST_${stockId}`);
+      await close();
+      blockchainStatus = "Success";
+      console.log(`[Blockchain] DeleteHarvest Success: HARVEST_${stockId} (tx=${txId})`);
+    } catch (bcErr) {
+      console.error("Blockchain Delete Failed:", bcErr);
+      blockchainStatus = "Failed";
+    }
+
+    return res.json({ success: true, message: "Stock deleted", blockchainStatus });
+  } catch (err) {
+    console.error("Delete Error:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
 // GET /api/farmer/estimated-stocks  – list all harvests owned by the logged-in farmer
 const getEstimatedStocks = async (req, res) => {
   try {
@@ -264,7 +362,7 @@ const getEstimatedStocks = async (req, res) => {
     let query = supabase
       .from("estimated_stock")
       .select(
-        "id, fruit_type, variant, quantity, grade, estimated_harvest_date, price_per_kg, image_url, status, created_at",
+        "id, fruit_type, variant, quantity, grade, estimated_harvest_date, price_per_kg, image_url, status, blockchain_tx_id, created_at",
       )
       .eq("farmer_id", userId)
       .order("created_at", { ascending: false });
@@ -284,4 +382,10 @@ const getEstimatedStocks = async (req, res) => {
   }
 };
 
-module.exports = { submitPredictStock, getStockById, updateStock, getEstimatedStocks };
+module.exports = {
+  submitPredictStock,
+  getStockById,
+  updateStock,
+  getEstimatedStocks,
+  deleteStock,
+};
