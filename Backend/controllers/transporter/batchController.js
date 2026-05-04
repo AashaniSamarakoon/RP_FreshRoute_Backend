@@ -103,7 +103,7 @@ const cron = require("node-cron");
 const { supabase } = require("../../utils/supabaseClient");
 const {
   runAllocationEngine,
-} = require("../../services/logisticsEngine/allocationEngine");
+} = require("../../Services/logisticsEngine/allocationEngine");
 
 async function processBatchForDate(targetDate) {
   const logs = [];

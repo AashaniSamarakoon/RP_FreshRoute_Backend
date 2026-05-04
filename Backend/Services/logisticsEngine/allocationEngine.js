@@ -15,6 +15,7 @@ async function runAllocationEngine(
 ) {
   const MAX_SHIFT_MINUTES = 600;
   const MINS_PER_STOP = 30;
+  const ROAD_FACTOR = 1.3;
   const scheduledJobs = [];
   const overflowJobs = [];
 
@@ -27,6 +28,7 @@ async function runAllocationEngine(
     is_reefer_on: false,
     operating_temp_c: null,
     minutes_worked: 0,
+    wave_est_minutes: 0,
     is_shift_over: false,
     trips_completed: 0,
   }));
@@ -111,6 +113,7 @@ async function runAllocationEngine(
       v.has_ethylene_sensitive = false;
       v.is_reefer_on = false;
       v.operating_temp_c = null;
+      v.wave_est_minutes = 0;
     }
 
     for (let i = 0; i < pendingFractions.length; i++) {
@@ -121,6 +124,7 @@ async function runAllocationEngine(
       while (orderObj.remainingQty > 0) {
         let bestVehicle = null;
         let bestScore = -Infinity;
+        let bestEstMins = 0;
 
         for (let v of fleetStatus) {
           if (v.is_shift_over || v.remaining_capacity <= 0) continue;
@@ -153,21 +157,30 @@ async function runAllocationEngine(
             }
           }
 
-          // 4. Predictive Time Boxing
+          // 4. Predictive Time Boxing (road-adjusted + wave-accumulated)
+          // Fix 1: multiply by ROAD_FACTOR so the prediction matches real driving distance.
+          // Fix 2: use wave_est_minutes to account for orders already committed this wave,
+          //        so later orders in the same wave cannot silently overrun the shift limit.
           const emptyKm = calculateDistanceKm(
             v.current_lat || SRI_LANKA_CITIES.colombo.lat,
             v.current_lng || SRI_LANKA_CITIES.colombo.lng,
             orderObj._algo.pLat,
             orderObj._algo.pLng,
-          );
+          ) * ROAD_FACTOR;
           const loadedKm = calculateDistanceKm(
             orderObj._algo.pLat,
             orderObj._algo.pLng,
             orderObj._algo.dLat,
             orderObj._algo.dLng,
-          );
-          const estTimeMins = Math.round(((emptyKm + loadedKm) / 40) * 60) + 60;
-          if (v.minutes_worked + estTimeMins > MAX_SHIFT_MINUTES) continue;
+          ) * ROAD_FACTOR;
+          // First order in this wave: count the empty drive to the pickup.
+          // Subsequent orders: count only the loaded leg — the route optimizer handles
+          // inter-stop positioning, and this prevents double-counting the empty drive.
+          const travelKm = v.assigned_orders.length === 0
+            ? emptyKm + loadedKm
+            : loadedKm;
+          const estTimeMins = Math.round((travelKm / 40) * 60) + (2 * MINS_PER_STOP);
+          if (v.minutes_worked + v.wave_est_minutes + estTimeMins > MAX_SHIFT_MINUTES) continue;
 
           // 5. Scoring
           let typeScore =
@@ -184,6 +197,7 @@ async function runAllocationEngine(
           if (currentScore > bestScore) {
             bestScore = currentScore;
             bestVehicle = v;
+            bestEstMins = estTimeMins;
           }
         }
 
@@ -209,6 +223,7 @@ async function runAllocationEngine(
           ...orderObj,
           allocated_quantity: loadAmount,
         });
+        bestVehicle.wave_est_minutes += bestEstMins;
         packedAnythingInThisWave = true;
       }
     }

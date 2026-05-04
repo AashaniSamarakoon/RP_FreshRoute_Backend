@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(node tests/logisticsValidation.js)",
+      "Bash(node Backend/tests/logisticsValidation.js)"
+    ]
+  }
+}

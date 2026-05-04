@@ -1,0 +1,44 @@
+name: Deploy Freshroute Backend
+
+on:
+  push:
+    branches:
+      - deployment
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    if: false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy on EC2
+        run: |
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+
+            echo "Pulling latest code..."
+            cd /var/www/freshroute-api
+            git fetch origin deployment
+            git checkout deployment
+            git pull origin deployment
+
+            echo "Installing backend dependencies..."
+            cd /var/www/freshroute-api/Backend
+            npm install --omit=dev
+
+            echo "Restarting PM2 backend..."
+            pm2 restart freshroute-backend || pm2 start npm --name freshroute-backend -- start
+
+            echo "Deployment complete."
+          EOF
