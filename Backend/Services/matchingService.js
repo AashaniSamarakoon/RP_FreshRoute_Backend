@@ -1,11 +1,11 @@
 const { supabase, supabaseAdmin } = require("../utils/supabaseClient");
 
 // ─── Configurable Weights ─────────────────────────────────────────────────────
-const W_LOC = 0.35; // Distance from farmer → buyer delivery location (35%)
-const W_REP = 0.15; // Farmer reputation                               (15%)
-const W_DATE = 0.15; // Harvest date proximity to required date         (15%)
-const W_QTY = 0.15; // Quantity fulfillment ratio                      (15%)
-const W_QUALITY = 0.2; // Grade/quality match                             (20%)
+const W_QUALITY = 0.3; // Grade/quality match                            (30%)
+const W_DATE = 0.22; // Delivery reliability / harvest date proximity   (22%)
+const W_LOC = 0.17; // Distance from farmer → buyer delivery location   (17%)
+const W_QTY = 0.16; // Quantity fulfillment ratio                       (16%)
+const W_REP = 0.15; // Farmer reputation                                (15%)
 
 const MAX_DISTANCE_KM = 300; // Farmers beyond this score 0 for location
 const MAX_DAYS_WINDOW = 7; // Harvest dates more than 7 days early score 0
