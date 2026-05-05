@@ -1,3 +1,8 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+
 AI_layer/node_modules/
 AI_layer/.DS_Store
 .DS_Store

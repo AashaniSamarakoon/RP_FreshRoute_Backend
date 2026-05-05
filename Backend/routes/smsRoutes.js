@@ -6,8 +6,9 @@ const {
 
 const router = express.Router();
 
-// SMS Preferences - accessible by any authenticated user
-router.get("/preferences", getSMSPreferences);
-router.put("/preferences", updateSMSPreferences);
+// SMS Preferences - accessible by farmer users
+router.get("/", getSMSPreferences);
+router.put("/", updateSMSPreferences);
+router.patch("/", updateSMSPreferences);
 
 module.exports = router;

@@ -12,7 +12,7 @@
         "pretest": "npm run lint",
         "test": "",
         "start": "set -x && fabric-chaincode-node start",
-        "build": "tsc",
+        "build": "node ./node_modules/typescript/bin/tsc",
         "build:watch": "tsc -w",
         "prepublishOnly": "npm run build",
         "docker": "docker build -f ./Dockerfile -t asset-transfer-basic .",
