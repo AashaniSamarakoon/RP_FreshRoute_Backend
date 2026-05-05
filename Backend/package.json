@@ -41,6 +41,7 @@
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0",
     "twilio": "^5.11.1",
+    "ws": "^8.18.3",
     "winston": "^3.19.0"
   },
   "devDependencies": {
