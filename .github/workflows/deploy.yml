@@ -44,7 +44,11 @@ jobs:
 
             echo "Installing backend dependencies..."
             cd /var/www/freshroute-api/Backend
-            npm install --omit=dev
+            npm ci --omit=dev || {
+              echo "Clean install failed. Removing stale node_modules and retrying..."
+              rm -rf node_modules
+              npm ci --omit=dev
+            }
 
             echo "Restarting PM2 backend..."
             pm2 restart freshroute-backend || pm2 start npm --name freshroute-backend -- start
