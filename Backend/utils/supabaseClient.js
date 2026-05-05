@@ -1,6 +1,7 @@
 // supabaseClient.js
 require("dotenv").config();
 const { createClient } = require("@supabase/supabase-js");
+const WebSocket = require("ws");
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
@@ -10,13 +11,20 @@ if (!supabaseUrl || !supabaseKey) {
   console.error("Missing SUPABASE_URL or SUPABASE_KEY in .env");
 }
 
+const supabaseOptions = {
+  realtime: {
+    transport: WebSocket,
+  },
+};
+
 // Regular client (uses anon key, requires RLS policies)
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl, supabaseKey, supabaseOptions);
 
 // Admin client (uses service_role key, bypasses RLS)
 // Use this for backend operations like file uploads, admin queries, etc.
 const supabaseAdmin = supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+      ...supabaseOptions,
       auth: {
         autoRefreshToken: false,
         persistSession: false,

@@ -9,66 +9,65 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// Define log format
-const logFormat = winston.format.combine(
-  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-  winston.format.errors({ stack: true }),
-  winston.format.splat(),
-  winston.format.json()
-);
-
-// Console format for development
-const consoleFormat = winston.format.combine(
-  winston.format.colorize(),
-  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    let msg = `${timestamp} [${level}]: ${message}`;
-    if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
-    }
-    return msg;
-  })
-);
-
-// Create logger instance
-const logger = winston.createLogger({
+// Create logger instance for winston 2.x
+const logger = new winston.Logger({
   level: process.env.LOG_LEVEL || "info",
-  format: logFormat,
-  defaultMeta: { service: "freshroute-backend" },
   transports: [
     // Write all logs to combined.log
     new winston.transports.File({
+      name: "combined-file",
       filename: path.join(logsDir, "combined.log"),
       maxsize: 5242880, // 5MB
       maxFiles: 5,
+      timestamp: true,
+      json: true
     }),
     // Write errors to error.log
     new winston.transports.File({
+      name: "error-file",
       filename: path.join(logsDir, "error.log"),
       level: "error",
       maxsize: 5242880, // 5MB
       maxFiles: 5,
+      timestamp: true,
+      json: true
     }),
     // Write fruit grading specific logs
     new winston.transports.File({
+      name: "fruit-grading-file",
       filename: path.join(logsDir, "fruit-grading.log"),
       maxsize: 5242880, // 5MB
       maxFiles: 5,
+      timestamp: true,
+      json: true
     }),
   ],
 });
 
 // Add console transport in development
 if (process.env.NODE_ENV !== "production") {
-  logger.add(
-    new winston.transports.Console({
-      format: consoleFormat,
-    })
-  );
+  logger.add(winston.transports.Console, {
+    name: "console",
+    timestamp: true,
+    colorize: true,
+    prettyPrint: true
+  });
 }
 
-// Create a child logger for fruit grading with specific context
-logger.fruitGrading = logger.child({ module: "fruit-grading" });
+function createModuleLogger(moduleName) {
+  const moduleLogger = {};
+
+  ["error", "warn", "info", "verbose", "debug", "silly"].forEach((level) => {
+    moduleLogger[level] = (message, meta) => {
+      logger.log(level, message, Object.assign({ module: moduleName }, meta || {}));
+    };
+  });
+
+  return moduleLogger;
+}
+
+// Create a module logger for fruit grading with specific context
+logger.fruitGrading = createModuleLogger("fruit-grading");
 
 module.exports = logger;
 

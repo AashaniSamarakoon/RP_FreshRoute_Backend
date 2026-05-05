@@ -1,7 +1,91 @@
 // services/notificationService.js
 // Handles real-time notifications for database changes
 
-const { supabase } = require("../utils/supabaseClient");
+const { supabase, supabaseAdmin } = require("../utils/supabaseClient");
+const notificationDb = supabaseAdmin || supabase;
+
+let Expo;
+try {
+  ({ Expo } = require("expo-server-sdk"));
+} catch (err) {
+  Expo = null;
+}
+
+const expo = Expo ? new Expo() : null;
+
+async function sendPushToUser(userId, { title, body, data = {} }) {
+  if (!Expo || !expo) {
+    console.warn("Expo push skipped: expo-server-sdk is not installed");
+    return;
+  }
+
+  const { data: tokens, error } = await notificationDb
+    .from("user_push_tokens")
+    .select("expo_push_token")
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Push token fetch error:", error.message);
+    return;
+  }
+
+  if (!tokens || tokens.length === 0) {
+    console.log("No push tokens for user", userId);
+    return;
+  }
+
+  const messages = [];
+
+  for (const row of tokens) {
+    const pushToken = row.expo_push_token;
+
+    if (!Expo.isExpoPushToken(pushToken)) {
+      console.warn("Invalid Expo push token:", pushToken);
+      continue;
+    }
+
+    messages.push({
+      to: pushToken,
+      sound: "default",
+      title,
+      body,
+      data,
+    });
+  }
+
+  const chunks = expo.chunkPushNotifications(messages);
+
+  for (const chunk of chunks) {
+    try {
+      const tickets = await expo.sendPushNotificationsAsync(chunk);
+      console.log("Push tickets:", tickets);
+    } catch (err) {
+      console.error("Push send error:", err);
+    }
+  }
+}
+
+async function createNotificationAndPush(userId, notification) {
+  const { error } = await notificationDb.from("notifications").insert({
+    user_id: userId,
+    title: notification.title,
+    body: notification.body,
+    category: notification.category || "general",
+    severity: notification.severity || "info",
+    action_url: notification.action_url || null,
+  });
+
+  if (error) {
+    console.error("Notification insert error:", error.message);
+    return;
+  }
+
+  await sendPushToUser(userId, {
+    title: notification.title,
+    body: notification.body,
+    data: notification.data || {},
+  });
+}
 
 /**
  * Send notification to farmer
@@ -188,6 +272,8 @@ async function deleteOldNotifications() {
 }
 
 module.exports = {
+  sendPushToUser,
+  createNotificationAndPush,
   sendNotification,
   sendBulkNotifications,
   notifyPriceUpdate,

@@ -125,8 +125,54 @@ function createOrgs() {
     fatalln "Failed to generate certificates..."
   fi
 
+  trustFabricCAsForClientIdentities
+
   infoln "Generating CCP files for FarmerOrg, BuyerOrg, and TransporterOrg"
   ./organizations/ccp-generate.sh
+}
+
+function trustOrgFabricCAForClients() {
+  local orgName=$1
+  local orgDomain=$2
+  local caDir=$3
+  local fabricCaName=$4
+
+  local mspDir="organizations/peerOrganizations/${orgDomain}/msp"
+  local cryptogenCaName="ca.${orgDomain}-cert.pem"
+  local fabricCaSource="organizations/fabric-ca/${caDir}/ca-cert.pem"
+  local fabricCaTarget="${mspDir}/cacerts/${fabricCaName}"
+
+  if [ ! -f "${fabricCaSource}" ]; then
+    warnln "Fabric CA certificate not found for ${orgName}: ${fabricCaSource}. CA-issued app users will not be trusted until this cert exists."
+    return
+  fi
+
+  cp "${fabricCaSource}" "${fabricCaTarget}"
+
+  cat > "${mspDir}/config.yaml" <<EOF
+NodeOUs:
+  Enable: true
+  ClientOUIdentifier:
+    Certificate: cacerts/${fabricCaName}
+    OrganizationalUnitIdentifier: client
+  PeerOUIdentifier:
+    Certificate: cacerts/${cryptogenCaName}
+    OrganizationalUnitIdentifier: peer
+  AdminOUIdentifier:
+    Certificate: cacerts/${cryptogenCaName}
+    OrganizationalUnitIdentifier: admin
+  OrdererOUIdentifier:
+    Certificate: cacerts/${cryptogenCaName}
+    OrganizationalUnitIdentifier: orderer
+EOF
+}
+
+function trustFabricCAsForClientIdentities() {
+  infoln "Adding Fabric CA roots to org MSPs for backend-issued client identities"
+
+  trustOrgFabricCAForClients "FarmerOrg" "farmer.freshroute.com" "farmer" "fabric-ca-farmer-cert.pem"
+  trustOrgFabricCAForClients "BuyerOrg" "buyer.freshroute.com" "buyer" "fabric-ca-buyer-cert.pem"
+  trustOrgFabricCAForClients "TransporterOrg" "transporter.freshroute.com" "transporter" "fabric-ca-transporter-cert.pem"
 }
 
 # Generate orderer system channel genesis block
@@ -161,7 +207,7 @@ function networkUp() {
     createConsortium
   fi
 
-  COMPOSE_FILES="-f compose/docker/docker-compose-freshroute.yaml"
+  COMPOSE_FILES="-f compose/docker/docker-compose-ca.yaml -f compose/docker/docker-compose-freshroute.yaml"
   
   DOCKER_SOCK="${DOCKER_SOCK}" ${CONTAINER_CLI_COMPOSE} ${COMPOSE_FILES} up -d 2>&1
 
@@ -197,7 +243,7 @@ function deployCCAAS() {
 
 # Tear down running network
 function networkDown() {
-  COMPOSE_FILES="-f compose/docker/docker-compose-freshroute.yaml"
+  COMPOSE_FILES="-f compose/docker/docker-compose-ca.yaml -f compose/docker/docker-compose-freshroute.yaml"
   
   if [ "${CONTAINER_CLI}" == "docker" ]; then
     ${CONTAINER_CLI_COMPOSE} ${COMPOSE_FILES} down --volumes --remove-orphans

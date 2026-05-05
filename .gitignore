@@ -1,1 +1,6 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+
 AI_layer/node_modules/

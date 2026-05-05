@@ -78,10 +78,19 @@ async function getContract(userId, contractName) {
     contract = network.getContract("freshroute");
   }
 
-  // diagnostic: ensure the contract seems fully-featured
-  if (!contract || typeof contract.createTransaction !== "function") {
+  // Diagnostic: ensure the contract has at least one supported submit API.
+  // fabric-gateway exposes submitAsync/newProposal/submitTransaction, while
+  // fabric-network exposes createTransaction.
+  const supportsSubmit =
+    contract &&
+    (typeof contract.submitAsync === "function" ||
+      typeof contract.newProposal === "function" ||
+      typeof contract.submitTransaction === "function" ||
+      typeof contract.createTransaction === "function");
+
+  if (!supportsSubmit) {
     console.warn(
-      `[getContract] returned contract for name='${contractName}' does not support createTransaction; ` +
+      `[getContract] returned contract for name='${contractName}' without a supported submit API; ` +
         "it may be a generic fallback or the contract isn't deployed on the network",
     );
   }

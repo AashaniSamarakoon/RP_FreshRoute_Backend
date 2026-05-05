@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - deployment
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to deploy. Leave empty to deploy the selected branch.
+        required: false
+        type: string
 
 jobs:
   deploy:
@@ -13,28 +19,73 @@ jobs:
     steps:
       - name: Checkout latest code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Setup SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
+          if [ -z "$EC2_HOST" ]; then
+            echo "EC2_HOST secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$EC2_SSH_KEY" ]; then
+            echo "EC2_SSH_KEY secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$EC2_USER" ]; then
+            echo "EC2_USER secret is missing."
+            exit 1
+          fi
+
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -T 30 -H "$EC2_HOST" >> ~/.ssh/known_hosts || {
+            echo "Unable to scan SSH host key for $EC2_HOST. Check EC2_HOST and inbound port 22."
+            exit 1
+          }
 
       - name: Deploy on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
-          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          DEPLOY_BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+
+          ssh -i ~/.ssh/ec2_key "$EC2_USER@$EC2_HOST" "DEPLOY_BRANCH=$DEPLOY_BRANCH bash -s" << 'EOF'
             set -e
 
             echo "Pulling latest code..."
             cd /var/www/freshroute-api
-            git fetch origin deployment
-            git checkout deployment
-            git pull origin deployment
+            git fetch origin "$DEPLOY_BRANCH"
+            git checkout "$DEPLOY_BRANCH"
+            git pull origin "$DEPLOY_BRANCH"
 
             echo "Installing backend dependencies..."
             cd /var/www/freshroute-api/Backend
-            npm install --omit=dev
+
+            if [ "$(free | awk '/Swap:/ {print $2}')" -eq 0 ]; then
+              echo "No swap detected. Creating /swapfile for npm install..."
+              if [ ! -f /swapfile ]; then
+                sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+                sudo chmod 600 /swapfile
+                sudo mkswap /swapfile
+              fi
+              sudo swapon /swapfile
+            fi
+            free -h
+
+            npm ci --omit=dev --no-audit --no-fund || {
+              echo "Clean install failed. Removing stale node_modules and retrying..."
+              rm -rf node_modules
+              npm ci --omit=dev --no-audit --no-fund
+            }
 
             echo "Restarting PM2 backend..."
             pm2 restart freshroute-backend || pm2 start npm --name freshroute-backend -- start

@@ -4,6 +4,47 @@ const {
 const { getContract } = require("../../Services/blockchain/contractService"); // Import the gateway bridge
 const { submitWithTx } = require("../../utils/blockchainUtils");
 const { supabase, supabaseAdmin } = require("../../utils/supabaseClient");
+const fs = require("fs/promises");
+const path = require("path");
+
+const getRoleProfileTable = (normalizedRole) =>
+  normalizedRole === "BUYER"
+    ? "buyers"
+    : normalizedRole === "FARMER"
+    ? "farmers"
+    : "transporter";
+
+const removeWalletIdentity = async (userId) => {
+  const walletPath = path.join(process.cwd(), "wallet", `${userId}.id`);
+  await fs.rm(walletPath, { force: true });
+};
+
+const cleanupFailedSignup = async (userId, roleProfileTable, shouldRemoveWallet) => {
+  const cleanupTasks = [];
+
+  if (roleProfileTable) {
+    cleanupTasks.push(supabaseAdmin.from(roleProfileTable).delete().eq("user_id", userId));
+  }
+
+  cleanupTasks.push(supabaseAdmin.from("users").delete().eq("id", userId));
+
+  if (supabaseAdmin.auth?.admin?.deleteUser) {
+    cleanupTasks.push(supabaseAdmin.auth.admin.deleteUser(userId));
+  } else {
+    console.warn("Supabase admin deleteUser is unavailable; auth user cleanup was skipped.");
+  }
+
+  if (shouldRemoveWallet) {
+    cleanupTasks.push(removeWalletIdentity(userId));
+  }
+
+  const results = await Promise.allSettled(cleanupTasks);
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      console.warn("Failed to cleanup partial signup:", result.reason?.message || result.reason);
+    }
+  });
+};
 
 // Signup
 const signup = async (req, res) => {
@@ -51,21 +92,15 @@ const signup = async (req, res) => {
     let ledgerStatus = "Pending";
     let identitySuccess = false;
     const fullName = `${first_name} ${last_name}`;
+    const roleProfileTable = getRoleProfileTable(normalizedRole);
 
     // Create role-specific profile row using admin client to bypass RLS.
     // Use upsert (onConflict: user_id) so that if a Supabase trigger already
     // created the row before this code runs we don't crash with a duplicate PK.
     let roleProfile = null;
     try {
-      const table =
-        normalizedRole === "BUYER"
-          ? "buyers"
-          : normalizedRole === "FARMER"
-          ? "farmers"
-          : "transporter";
-
       const { data, error } = await supabaseAdmin
-        .from(table)
+        .from(roleProfileTable)
         .upsert({ user_id: user.id }, { onConflict: "user_id", ignoreDuplicates: false })
         .select()
         .single();
@@ -73,6 +108,7 @@ const signup = async (req, res) => {
       roleProfile = data;
     } catch (profileErr) {
       console.error("Failed to create role profile:", profileErr);
+      await cleanupFailedSignup(user.id, roleProfileTable, false);
       return res.status(500).json({
         message: "Failed to create user profile. Please contact support.",
         error: profileErr.message,
@@ -89,44 +125,64 @@ const signup = async (req, res) => {
     } catch (blockchainError) {
       ledgerStatus = "Blockchain Service Unavailable";
     }
+    if (!identitySuccess) {
+      await cleanupFailedSignup(user.id, roleProfileTable, false);
+      return res.status(503).json({
+        message: "Signup failed because blockchain identity creation is unavailable. Please try again later.",
+        blockchainStatus: ledgerStatus,
+      });
+    }
 
-    if (identitySuccess) {
+    try {
+      const adminIdentityId = `admin.${normalizedRole === "FARMER" ? "FarmerOrgMSP" : normalizedRole === "BUYER" ? "BuyerOrgMSP" : "TransporterOrgMSP"}`;
+      const { contract, close } = await getContract(
+        adminIdentityId,
+        "UserContract",
+      );
       try {
-        const adminIdentityId = `admin.${normalizedRole === "FARMER" ? "FarmerOrgMSP" : normalizedRole === "BUYER" ? "BuyerOrgMSP" : "TransporterOrgMSP"}`;
-        const { contract, close } = await getContract(
-          adminIdentityId,
-          "UserContract",
-        );
-        try {
-          const regTx = await submitWithTx(contract, "RegisterUser", user.id, fullName, normalizedRole);
-          ledgerStatus = "Registered on Ledger";
-          console.log("RegisterUser tx", regTx);
-          if (regTx) {
-            // store txId on user record (append to array)
-            try {
-              const { data: existingUser } = await supabaseAdmin
-                .from("users")
-                .select("blockchain_tx_id")
-                .eq("id", user.id)
-                .single();
-              const existing = existingUser?.blockchain_tx_id || [];
-              const arr = Array.isArray(existing) ? existing : [existing];
-              await supabaseAdmin
-                .from("users")
-                .update({ blockchain_tx_id: [...arr, regTx] })
-                .eq("id", user.id);
-            } catch (_e) {
-              console.warn("Failed to persist user blockchain txId", _e.message);
-            }
+        const regTx = await submitWithTx(contract, "RegisterUser", user.id, fullName, normalizedRole);
+        ledgerStatus = "Registered on Ledger";
+        console.log("RegisterUser tx", regTx);
+        if (regTx) {
+          // store txId on user record (append to array)
+          try {
+            const { data: existingUser } = await supabaseAdmin
+              .from("users")
+              .select("blockchain_tx_id")
+              .eq("id", user.id)
+              .single();
+            const existing = existingUser?.blockchain_tx_id || [];
+            const arr = Array.isArray(existing) ? existing : [existing];
+            await supabaseAdmin
+              .from("users")
+              .update({ blockchain_tx_id: [...arr, regTx] })
+              .eq("id", user.id);
+          } catch (_e) {
+            console.warn("Failed to persist user blockchain txId", _e.message);
           }
-        } catch (txError) {
-          ledgerStatus = "Identity Created, Ledger Failed";
-        } finally {
-          close();
         }
-      } catch (gatewayError) {
-        ledgerStatus = "Gateway Error";
+      } catch (txError) {
+        console.error(
+          "Blockchain RegisterUser transaction failed:",
+          txError.details || txError.message,
+        );
+        ledgerStatus = "Identity Created, Ledger Failed";
+      } finally {
+        close();
       }
+    } catch (gatewayError) {
+      console.error(
+        "Blockchain gateway connection failed during signup:",
+        gatewayError.details || gatewayError.message,
+      );
+      ledgerStatus = "Gateway Error";
+    }
+    if (ledgerStatus !== "Registered on Ledger") {
+      await cleanupFailedSignup(user.id, roleProfileTable, true);
+      return res.status(503).json({
+        message: "Signup failed because blockchain ledger registration is unavailable. Please try again later.",
+        blockchainStatus: ledgerStatus,
+      });
     }
 
     const token = authData.session?.access_token || null;

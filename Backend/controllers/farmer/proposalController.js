@@ -2,6 +2,7 @@ const { supabaseAdmin: supabase } = require("../../utils/supabaseClient");
 const { calculateDistanceKm } = require("../../utils/logisticsUtils");
 const { fetchUnitPrice, calculatePrice, calculateFarmerPrice } = require("../../utils/pricingUtils");
 const { getContract } = require("../../Services/blockchain/contractService");
+const { submitWithTx } = require("../../utils/blockchainUtils");
 const { sendSystemNotification } = require("../../Services/notificationsService");
 
 // ─── Farmer-side proposal pricing ────────────────────────────────────────────

@@ -28,7 +28,7 @@ async function initializeSMSToggle() {
  */
 async function loadSMSPreference(toggleElement, statusElement) {
   try {
-    const response = await fetch('/api/farmer/sms/preferences', {
+    const response = await fetch('/sms-preferences', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${getAuthToken()}`, // Your auth token function
@@ -69,7 +69,7 @@ async function updateSMSPreference(enabled, statusElement) {
       statusElement.className = 'status-updating';
     }
 
-    const response = await fetch('/api/farmer/sms/preferences', {
+    const response = await fetch('/sms-preferences', {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${getAuthToken()}`, // Your auth token function
