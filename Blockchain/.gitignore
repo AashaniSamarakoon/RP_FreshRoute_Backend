@@ -32,6 +32,9 @@ install-fabric.sh
 
 # override the ignore of all config/ folders
 !full-stack-asset-transfer-guide/infrastructure/sample-network/config
+!freshroute-network/config/
+!freshroute-network/config/**
+!freshroute-network/config/*.yaml
 
 
 *.log
@@ -101,3 +104,8 @@ install-fabric.sh
 *.svclog
 *.psess
 *.
+
+# FreshRoute network runtime config required by network.sh
+!freshroute-network/config/
+!freshroute-network/config/**
+!freshroute-network/config/*.yaml
