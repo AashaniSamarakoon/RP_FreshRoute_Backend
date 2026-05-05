@@ -1,182 +1,215 @@
-// services/fruitGradingService.js
-const ort = require("onnxruntime-node");
-const sharp = require("sharp");
+// Multitask mango grading: ONNX model + rule-based grade (matches Mango-Grading-RP infer path).
+const fs = require("fs");
 const path = require("path");
+const ort = require("onnxruntime-node");
 const logger = require("../../utils/logger").fruitGrading;
 
-// ImageNet normalization constants (used during training)
-const IMAGENET_MEAN = [0.485, 0.456, 0.406];
-const IMAGENET_STD = [0.229, 0.224, 0.225];
-const IMG_SIZE = 224;
+const {
+  loadMangoGradingConfigSync,
+  prepareCleanedRgbFromBuffer,
+  computeClassicalFeatures,
+  classicalToFloat32Row,
+  rgbToModelNchw,
+} = require("./mangoMultitaskPreprocess");
 
-// Default class mapping (update if you have metadata.json)
-// Based on typical fruit grading: Grade_A, Grade_B, Grade_C or similar
-const DEFAULT_CLASSES = {
-  0: "Grade_A",
-  1: "Grade_B",
-  2: "Grade_C",
-};
+const INV_GRADE = { 0: "A", 1: "B", 2: "C" };
+const COLOR_LABELS = ["greenish", "mixed", "yellow"];
+const SEVERITY_LABELS = ["none", "mild", "severe"];
+
+function softmax1d(data) {
+  const row = Array.isArray(data) ? data : Array.from(data);
+  const max = Math.max(...row);
+  const ex = row.map((x) => Math.exp(x - max));
+  const s = ex.reduce((a, b) => a + b, 0);
+  return ex.map((e) => e / s);
+}
+
+/**
+ * Same logic as src.mango_quality.metrics.rule_based_grade_from_probs (single row).
+ */
+function ruleBasedGradeFromProbs(colorProbs, spotProbs, blemishProbs, thresholds) {
+  const pGreenish = colorProbs[0];
+  const pYellow = colorProbs[2];
+  const pSevereSpot = spotProbs[2];
+  const pSevereBlemish = blemishProbs[2];
+
+  if (
+    pYellow >= thresholds.yellow_min &&
+    pSevereSpot < thresholds.severe_spot_max_for_a &&
+    pSevereBlemish < thresholds.severe_blemish_max_for_a
+  ) {
+    return 0;
+  }
+  if (
+    pGreenish >= thresholds.greenish_min_for_c ||
+    pSevereSpot >= thresholds.severe_spot_min_for_c ||
+    pSevereBlemish >= thresholds.severe_blemish_min_for_c
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+function headProbabilities(logitsFlat, labels) {
+  const probs = softmax1d(logitsFlat);
+  const predictedIndex = probs.indexOf(Math.max(...probs));
+  return {
+    predictedIndex,
+    predictedLabel: labels[predictedIndex],
+    probabilities: probs.map((p, i) => ({
+      classIndex: i,
+      className: labels[i],
+      probability: p * 100,
+    })),
+  };
+}
 
 class FruitGradingService {
   constructor() {
     this.session = null;
-    this.classes = DEFAULT_CLASSES;
-    this.modelPath = path.join(
-      __dirname,
-      "../../..",
-      "AI_layer",
-      "fruit_grading",
-      "best_mango_mobilenetv3.onnx"
-    );
+    this.config = null;
+    this.thresholds = null;
+    this.aiLayerDir = path.join(__dirname, "../../..", "AI_layer", "fruit_grading");
+    this.modelPath = path.join(this.aiLayerDir, "multitask_grading_model.onnx");
+    this.configPath = path.join(this.aiLayerDir, "config.yaml");
+    this.thresholdsPath = path.join(this.aiLayerDir, "best_rule_thresholds.json");
   }
 
-  /**
-   * Load ONNX model on server startup
-   */
   async loadModel() {
     try {
-      logger.info(`Loading ONNX model from: ${this.modelPath}`);
+      const modelPath = process.env.FRUIT_GRADING_MODEL_PATH || this.modelPath;
+      const configPath = process.env.FRUIT_GRADING_CONFIG_PATH || this.configPath;
+      const thresholdsPath = process.env.FRUIT_GRADING_THRESHOLDS_PATH || this.thresholdsPath;
+
+      logger.info(`Loading multitask ONNX from: ${modelPath}`);
       const startTime = Date.now();
-      this.session = await ort.InferenceSession.create(this.modelPath);
-      const loadTime = Date.now() - startTime;
-      logger.info("ONNX model loaded successfully", {
-        loadTime: `${loadTime}ms`,
+      this.config = loadMangoGradingConfigSync(configPath);
+      const threshRaw = fs.readFileSync(thresholdsPath, "utf8");
+      this.thresholds = JSON.parse(threshRaw);
+      this.activeThresholdsPath = thresholdsPath;
+
+      this.session = await ort.InferenceSession.create(modelPath);
+      logger.info("Multitask ONNX model loaded", {
+        loadTime: `${Date.now() - startTime}ms`,
         inputNames: this.session.inputNames,
         outputNames: this.session.outputNames,
       });
       return true;
     } catch (error) {
-      logger.error("Failed to load ONNX model", {
+      logger.error("Failed to load multitask ONNX model", {
         error: error.message,
         stack: error.stack,
-        modelPath: this.modelPath,
       });
       throw error;
     }
   }
 
-  /**
-   * Preprocess image: resize to 224x224, normalize, convert to tensor
-   */
-  async preprocessImage(imageBuffer) {
-    try {
-      // Resize and convert to RGB (3 channels)
-      const image = await sharp(imageBuffer)
-        .resize(IMG_SIZE, IMG_SIZE, {
-          fit: "fill",
-          background: { r: 0, g: 0, b: 0 },
-        })
-        .removeAlpha() // Ensure no alpha channel
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-
-      const { data, info } = image;
-      const { width, height, channels } = info;
-
-      // Ensure we have exactly 3 channels (RGB)
-      if (channels !== 3) {
-        throw new Error(`Expected 3 channels (RGB), got ${channels}`);
-      }
-
-      // Convert to float32 array and normalize
-      const float32Data = new Float32Array(width * height * channels);
-
-      // Normalize: (pixel / 255.0 - mean) / std
-      for (let i = 0; i < data.length; i += channels) {
-        const r = data[i] / 255.0;
-        const g = data[i + 1] / 255.0;
-        const b = data[i + 2] / 255.0;
-
-        // Apply normalization
-        float32Data[i] = (r - IMAGENET_MEAN[0]) / IMAGENET_STD[0];
-        float32Data[i + 1] = (g - IMAGENET_MEAN[1]) / IMAGENET_STD[1];
-        float32Data[i + 2] = (b - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
-      }
-
-      // Convert to NCHW format (1, 3, 224, 224)
-      const tensorData = new Float32Array(1 * 3 * IMG_SIZE * IMG_SIZE);
-      let idx = 0;
-
-      // Separate R, G, B channels
-      for (let c = 0; c < 3; c++) {
-        for (let h = 0; h < IMG_SIZE; h++) {
-          for (let w = 0; w < IMG_SIZE; w++) {
-            const pixelIdx = (h * IMG_SIZE + w) * channels + c;
-            tensorData[idx++] = float32Data[pixelIdx];
-          }
-        }
-      }
-
-      return new ort.Tensor("float32", tensorData, [1, 3, IMG_SIZE, IMG_SIZE]);
-    } catch (error) {
-      logger.error("Image preprocessing error", {
-        error: error.message,
-        stack: error.stack,
-      });
-      throw new Error(`Failed to preprocess image: ${error.message}`);
+  _resolveInputNames() {
+    const names = this.session.inputNames;
+    if (names.length !== 2) {
+      throw new Error(
+        `Expected 2 ONNX inputs (image + classical_features), got ${names.length}: ${names.join(", ")}`
+      );
     }
+    const imageName = names.includes("input") ? "input" : names[0];
+    const classicalName = names.includes("classical_features")
+      ? "classical_features"
+      : names.find((n) => n !== imageName) || names[1];
+    return { imageName, classicalName };
   }
 
-  /**
-   * Run inference on a single image
-   */
   async predict(imageBuffer) {
-    if (!this.session) {
+    if (!this.session || !this.config || !this.thresholds) {
       logger.error("Prediction attempted but model not loaded");
       throw new Error("Model not loaded. Call loadModel() first.");
     }
 
     const startTime = Date.now();
-    try {
-      // Preprocess image
-      const preprocessStart = Date.now();
-      const inputTensor = await this.preprocessImage(imageBuffer);
-      const preprocessTime = Date.now() - preprocessStart;
+    const imageSize = this.config.training.image_size;
+    const mean = this.config.preprocessing.normalize_mean;
+    const std = this.config.preprocessing.normalize_std;
 
-      // Run inference
+    try {
+      const preprocessStart = Date.now();
+      const { rgb, width, height } = await prepareCleanedRgbFromBuffer(imageBuffer, this.config);
+      const classical = computeClassicalFeatures(rgb, width, height);
+      const classicalRow = classicalToFloat32Row(classical);
+      const nchw = await rgbToModelNchw(rgb, width, height, imageSize, mean, std);
+
+      const imageTensor = new ort.Tensor("float32", nchw, [1, 3, imageSize, imageSize]);
+      const classicalTensor = new ort.Tensor("float32", classicalRow, [1, 8]);
+
+      const { imageName, classicalName } = this._resolveInputNames();
+      const feeds = {
+        [imageName]: imageTensor,
+        [classicalName]: classicalTensor,
+      };
+
       const inferenceStart = Date.now();
-      const inputName = this.session.inputNames[0];
-      const feeds = { [inputName]: inputTensor };
       const results = await this.session.run(feeds);
       const inferenceTime = Date.now() - inferenceStart;
 
-      // Get output
-      const outputName = this.session.outputNames[0];
-      const output = results[outputName];
+      const need = ["grade", "color_stage", "spot_severity", "blemish_severity"];
+      for (const k of need) {
+        if (!results[k]) {
+          throw new Error(
+            `Missing ONNX output "${k}". Got keys: ${Object.keys(results).join(", ")}`
+          );
+        }
+      }
+      const gradeOut = results.grade;
+      const colorOut = results.color_stage;
+      const spotOut = results.spot_severity;
+      const blemishOut = results.blemish_severity;
 
-      // Convert to JavaScript array
-      const predictions = Array.from(output.data);
+      const gradeLogits = Array.from(gradeOut.data);
+      const colorLogits = Array.from(colorOut.data);
+      const spotLogits = Array.from(spotOut.data);
+      const blemishLogits = Array.from(blemishOut.data);
 
-      // Get predicted class and confidence
-      const maxIndex = predictions.indexOf(Math.max(...predictions));
-      const confidence = predictions[maxIndex];
-      const className = this.classes[maxIndex] || `Class_${maxIndex}`;
+      const gradeIdx = gradeLogits.indexOf(Math.max(...gradeLogits));
+      const colorProbs = softmax1d(colorLogits);
+      const spotProbs = softmax1d(spotLogits);
+      const blemishProbs = softmax1d(blemishLogits);
 
-      // Apply softmax to get probabilities
-      const expScores = predictions.map((x) => Math.exp(x));
-      const sumExp = expScores.reduce((a, b) => a + b, 0);
-      const probabilities = expScores.map((x) => x / sumExp);
-      const confidencePercent = probabilities[maxIndex] * 100;
+      const ruleIdx = ruleBasedGradeFromProbs(colorProbs, spotProbs, blemishProbs, this.thresholds);
+      const gradeRuleBased = INV_GRADE[ruleIdx];
+      const gradeDirect = INV_GRADE[gradeIdx];
 
+      const gradeHead = headProbabilities(gradeLogits, ["A", "B", "C"]);
+      const colorHead = headProbabilities(colorLogits, COLOR_LABELS);
+      const spotHead = headProbabilities(spotLogits, SEVERITY_LABELS);
+      const blemishHead = headProbabilities(blemishLogits, SEVERITY_LABELS);
+
+      const gradeDirectConfidence = gradeHead.probabilities[gradeIdx].probability;
+      const preprocessTime = Date.now() - preprocessStart;
       const totalTime = Date.now() - startTime;
 
-      logger.debug("Prediction completed", {
-        className,
-        confidence: confidencePercent.toFixed(2),
+      logger.debug("Multitask prediction completed", {
+        gradeRuleBased,
+        gradeDirect,
         preprocessTime: `${preprocessTime}ms`,
         inferenceTime: `${inferenceTime}ms`,
         totalTime: `${totalTime}ms`,
       });
 
       return {
-        classIndex: maxIndex,
-        className: className,
-        confidence: confidencePercent,
-        probabilities: probabilities.map((prob, idx) => ({
-          classIndex: idx,
-          className: this.classes[idx] || `Class_${idx}`,
-          probability: prob * 100,
-        })),
+        className: gradeRuleBased,
+        gradeRuleBased,
+        gradeDirect,
+        confidence: gradeDirectConfidence,
+        gradeDirectConfidence,
+        gradeHead,
+        colorStage: colorHead,
+        spotSeverity: spotHead,
+        blemishSeverity: blemishHead,
+        ruleThresholdsPath: this.activeThresholdsPath,
+        classicalFeatures: classical,
+        timings: {
+          preprocessMs: preprocessTime,
+          inferenceMs: inferenceTime,
+          totalMs: totalTime,
+        },
       };
     } catch (error) {
       logger.error("Prediction error", {
@@ -188,9 +221,6 @@ class FruitGradingService {
     }
   }
 
-  /**
-   * Predict multiple images
-   */
   async predictBatch(imageBuffers) {
     const batchStartTime = Date.now();
     const imageCount = imageBuffers.length;
@@ -210,8 +240,8 @@ class FruitGradingService {
         totalTime: `${batchTime}ms`,
         avgTimePerImage: `${(batchTime / imageCount).toFixed(2)}ms`,
         predictions: predictions.map((p) => ({
-          className: p.className,
-          confidence: p.confidence.toFixed(2),
+          gradeRuleBased: p.gradeRuleBased,
+          gradeDirect: p.gradeDirect,
         })),
       });
 
@@ -226,16 +256,11 @@ class FruitGradingService {
     }
   }
 
-  /**
-   * Update class mapping (if metadata.json is available)
-   */
-  setClasses(classes) {
-    this.classes = classes;
+  setClasses() {
+    logger.warn("setClasses is ignored for multitask grading (labels are fixed A/B/C and heads).");
   }
 }
 
-// Singleton instance
 const fruitGradingService = new FruitGradingService();
 
 module.exports = fruitGradingService;
-

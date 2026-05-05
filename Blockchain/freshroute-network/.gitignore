@@ -26,6 +26,8 @@ organizations/fabric-ca/*/fabric-ca-server.db
 
 # Docker volumes
 docker/
+!compose/docker/
+!compose/docker/**
 
 # OS files
 .DS_Store

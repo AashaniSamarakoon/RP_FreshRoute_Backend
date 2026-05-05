@@ -3,7 +3,9 @@
     "allow": [
       "Bash(xargs grep *)",
       "Bash(node tests/logisticsValidation.js)",
-      "Bash(node Backend/tests/logisticsValidation.js)"
+      "Bash(node Backend/tests/logisticsValidation.js)",
+      "Bash(npx jest *)",
+      "Bash(node tests/logistics/demo.js)"
     ]
   }
 }

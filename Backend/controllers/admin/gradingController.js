@@ -1,10 +1,14 @@
 const { supabase } = require("../../utils/supabaseClient");
 const fruitGradingService = require("../../Services/fruitGrading/fruitGradingService");
 
-/** Normalize grade for comparison (e.g. "Grade A", "Grade_A" -> "grade a"). */
+/**
+ * Normalize grade for comparison: "Grade A", "Grade_A", "A" -> "grade a".
+ */
 function normalizeGrade(g) {
   if (g == null || typeof g !== "string") return "";
-  return g.trim().toLowerCase().replace(/_/g, " ");
+  const s = g.trim().toLowerCase().replace(/_/g, " ");
+  if (/^[abc]$/.test(s)) return `grade ${s}`;
+  return s;
 }
 
 /**

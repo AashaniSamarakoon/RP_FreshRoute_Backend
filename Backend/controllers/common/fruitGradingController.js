@@ -2,6 +2,28 @@
 const fruitGradingService = require("../../Services/fruitGrading/fruitGradingService");
 const logger = require("../../utils/logger").fruitGrading;
 
+/** Map rule grade letter to legacy API labels (Grade_A, Grade_B, Grade_C). */
+function letterToLegacyGradeClass(letter) {
+  const L = String(letter || "").trim().toUpperCase();
+  if (L === "A" || L === "B" || L === "C") return `Grade_${L}`;
+  return `Grade_${letter}`;
+}
+
+/** Softmax probability (%) for the rule-based grade from the grade head. */
+function confidenceForRuleBasedGrade(pred) {
+  const letter = pred.gradeRuleBased;
+  const entry = pred.gradeHead.probabilities.find((p) => p.className === letter);
+  if (entry != null) return parseFloat(entry.probability.toFixed(2));
+  return parseFloat(Number(pred.confidence).toFixed(2));
+}
+
+function gradeHeadToLegacyAllProbabilities(gradeHead) {
+  return gradeHead.probabilities.map((p) => ({
+    className: letterToLegacyGradeClass(p.className),
+    probability: parseFloat(p.probability.toFixed(2)),
+  }));
+}
+
 /**
  * Predict fruit grades for up to 5 images
  * POST /api/fruit-grading/predict
@@ -65,19 +87,15 @@ const predictFruitGrades = async (req, res) => {
     // Run predictions
     const predictions = await fruitGradingService.predictBatch(imageBuffers);
 
-    // Format response
     const response = {
       success: true,
       count: predictions.length,
       predictions: predictions.map((pred, index) => ({
         imageIndex: index + 1,
         fileName: req.files[index].originalname,
-        predictedClass: pred.className,
-        confidence: parseFloat(pred.confidence.toFixed(2)),
-        allProbabilities: pred.probabilities.map((p) => ({
-          className: p.className,
-          probability: parseFloat(p.probability.toFixed(2)),
-        })),
+        predictedClass: letterToLegacyGradeClass(pred.gradeRuleBased),
+        confidence: confidenceForRuleBasedGrade(pred),
+        allProbabilities: gradeHeadToLegacyAllProbabilities(pred.gradeHead),
       })),
     };
 
