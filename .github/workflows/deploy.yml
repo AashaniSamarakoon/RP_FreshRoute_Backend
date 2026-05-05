@@ -4,16 +4,23 @@ on:
   push:
     branches:
       - deployment
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to deploy. Leave empty to deploy the selected branch.
+        required: false
+        type: string
 
 jobs:
   deploy:
     name: Deploy to EC2
-    if: false
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout latest code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Setup SSH
         run: |
@@ -24,14 +31,16 @@ jobs:
 
       - name: Deploy on EC2
         run: |
-          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          DEPLOY_BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "DEPLOY_BRANCH=$DEPLOY_BRANCH bash -s" << 'EOF'
             set -e
 
             echo "Pulling latest code..."
             cd /var/www/freshroute-api
-            git fetch origin deployment
-            git checkout deployment
-            git pull origin deployment
+            git fetch origin "$DEPLOY_BRANCH"
+            git checkout "$DEPLOY_BRANCH"
+            git pull origin "$DEPLOY_BRANCH"
 
             echo "Installing backend dependencies..."
             cd /var/www/freshroute-api/Backend
