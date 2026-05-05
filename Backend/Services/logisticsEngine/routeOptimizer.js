@@ -164,8 +164,7 @@ async function optimizeManifest(orders, startLat, startLng) {
     }
   }
 
-  // 5. FINAL CLEANUP (Old Format Restored)
-  // We apply the sequences and remove internal IDs, preserving the granular 1-to-1 order format
+  // 5. FINAL CLEANUP
   route.forEach((stop, index) => {
     stop.sequence = index + 1;
     delete stop.id;

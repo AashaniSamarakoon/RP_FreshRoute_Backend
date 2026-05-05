@@ -63,8 +63,8 @@ async function checkTemperatureSafety(vehicleId, currentTemp) {
   const { data: jobs } = await supabase
     .from("transport_jobs")
     .select("route_manifest")
-    .eq("vehicle_id", vehicleId)
-    // .eq("status", "IN_TRANSIT");
+    .eq("vehicle_id", vehicleId);
+  // .eq("status", "IN_TRANSIT");
 
   if (!jobs?.length) return;
 
