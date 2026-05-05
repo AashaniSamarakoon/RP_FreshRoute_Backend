@@ -8,6 +8,12 @@
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
