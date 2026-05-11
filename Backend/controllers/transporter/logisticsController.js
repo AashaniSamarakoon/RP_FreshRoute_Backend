@@ -14,11 +14,9 @@ exports.assignVehicleToOrder = async (req, res) => {
   };
 
   try {
-    print(`\n=== 🚛 STARTING ALGORITHM FOR ORDER: ${orderId} ===`);
+    print(`\n=== STARTING ALGORITHM FOR ORDER: ${orderId} ===`);
 
-    // ====================================================
     // STEP 1: FETCH DATA (Order, Fruit Specs)
-    // ====================================================
 
     // 1.1 Get Order
     const { data: order, error: orderErr } = await supabase
@@ -43,9 +41,7 @@ exports.assignVehicleToOrder = async (req, res) => {
       return res.status(400).json({ error: "Unknown fruit variant" });
     }
 
-    // ====================================================
     // STEP 2: CALCULATE EXTERNAL FACTORS (Weather, Distance)
-    // ====================================================
 
     // 2.1 Coordinate Logic
     // If DB has lat/long use it, else fallback to City Map
@@ -77,9 +73,11 @@ exports.assignVehicleToOrder = async (req, res) => {
       const routingData = await getDrivingDistanceKm(pLat, pLng, dLat, dLng);
       distance = routingData.distanceKm;
       durationMins = routingData.durationMins;
-      
+
       print(`[MAPS] Route: ${order.pickup_location} -> ${order.drop_location}`);
-      print(`[MAPS] OSRM Driving Distance: ${distance} km (Est: ${durationMins} mins)`);
+      print(
+        `[MAPS] OSRM Driving Distance: ${distance} km (Est: ${durationMins} mins)`,
+      );
     } else {
       print(`[WARN] Coordinates missing. Assuming safe distance.`);
       distance = 50; // Default safety
@@ -94,9 +92,7 @@ exports.assignVehicleToOrder = async (req, res) => {
       `[WEATHER] Condition at ${order.pickup_location}: ${weather.temp_c}°C, ${weather.condition}`,
     );
 
-    // ====================================================
-    // STEP 3: DETERMINE VEHICLE TYPE (The Freshness Algo)
-    // ====================================================
+    // STEP 3: DETERMINE VEHICLE TYPE
 
     let requiredType = "UNCOVERED"; // Start with cheapest
     let reason = "Optimal conditions";

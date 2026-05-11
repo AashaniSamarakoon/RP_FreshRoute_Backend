@@ -5,7 +5,15 @@
       "Bash(node tests/logisticsValidation.js)",
       "Bash(node Backend/tests/logisticsValidation.js)",
       "Bash(npx jest *)",
-      "Bash(node tests/logistics/demo.js)"
+      "Bash(node tests/logistics/demo.js)",
+      "Bash(node node_modules/jest/bin/jest.js --runInBand tests/logistics/testCases.allocation.test.js --verbose)",
+      "Bash(node node_modules/jest/bin/jest.js --runInBand tests/logistics/testCases.route.test.js tests/logistics/testCases.system.test.js tests/logistics/testCases.reliability.test.js --verbose)",
+      "Bash(npm run *)",
+      "Bash(node node_modules/jest/bin/jest.js --runInBand tests/logistics/testCases --verbose)",
+      "Bash(node node_modules/jest/bin/jest.js tests/logistics/testCases.allocation.test.js --verbose --no-coverage)",
+      "Bash(node node_modules/jest/bin/jest.js tests/logistics/testCases.allocation.test.js --verbose)",
+      "Bash(node node_modules/jest/bin/jest.js tests/logistics/testCases.allocation.test.js --verbose --ci)",
+      "Bash(node -e ' *)"
     ]
   }
 }
